@@ -114,12 +114,12 @@ export class PrizesUI {
   }
 }
 
-// ── 템플릿 — 자주 쓰는 시나리오 미리 정의 ─────────────────────
+// ── 템플릿 — 자주 쓰는 추첨 시나리오 (사용자 운영 케이스 기반) ──────
 export const TEMPLATES = [
-  { id: 'weekday',  label: '월~금',     emoji: '📅', names: ['월요일', '화요일', '수요일', '목요일', '금요일'] },
-  { id: 'weekall',  label: '월~일',     emoji: '🗓️', names: ['월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일'] },
-  { id: 'team',     label: 'A~D조',     emoji: '🏷️', names: ['A조', 'B조', 'C조', 'D조'] },
-  { id: 'num10',    label: '1~10번',    emoji: '🔢', names: Array.from({length: 10}, (_, i) => `${i+1}번`) },
+  // 평일 연장 5명 추첨
+  { id: 'weekday', label: '월~금',  emoji: '📅', names: ['월요일', '화요일', '수요일', '목요일', '금요일'] },
+  // 팀장 월·수 직접 하시는 경우 — 화·목·토 3명 추첨
+  { id: 'tts',     label: '화목토', emoji: '📌', names: ['화요일', '목요일', '토요일'] },
 ];
 
 // ── 참가자 입력 UI — textarea + 칩 리스트 ─────────────────────
