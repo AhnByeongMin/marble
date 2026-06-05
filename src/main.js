@@ -344,8 +344,40 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
       }));
     }
 
-    // ── stuck 감지 + nudge (점진적 강화: impulse → 큰 impulse → 텔레포트) ─
-    // 매 30프레임 (~0.5초) 마다 결승 안 한 구슬 y 변화 측정.
+    // ── cluster 감지 + 즉시 분리 임펄스 ─────────────────────────
+    // 구슬 두 개가 1.0m 안에 있고 둘 다 거의 정지면 cluster — 즉시 양방향 분리.
+    // stuck nudge (y 변화) 만으로 못 잡는 cluster 케이스 직격 해결.
+    function breakClusters() {
+      for (let i = 0; i < marbles.length; i++) {
+        const a = marbles[i]; if (a.finished) continue;
+        const at = a.rb.translation();
+        const av = a.rb.linvel();
+        const aSpeed = Math.hypot(av.x, av.y, av.z);
+        for (let j = i+1; j < marbles.length; j++) {
+          const b = marbles[j]; if (b.finished) continue;
+          const bt = b.rb.translation();
+          const bv = b.rb.linvel();
+          const bSpeed = Math.hypot(bv.x, bv.y, bv.z);
+          // 두 구슬 거리
+          const dx = at.x - bt.x, dy = at.y - bt.y, dz = at.z - bt.z;
+          const d = Math.hypot(dx, dy, dz);
+          // cluster 조건: 가깝고 (1.0 이하) 둘 다 거의 정지 (속도 1 이하)
+          if (d < 1.0 && aSpeed < 1.5 && bSpeed < 1.5) {
+            // 분리 방향 normal
+            const nx = d > 0.01 ? dx/d : (Math.random()-0.5);
+            const ny = d > 0.01 ? dy/d : (Math.random()-0.5);
+            const nz = d > 0.01 ? dz/d : 0;
+            const FORCE = 6;
+            a.rb.applyImpulse({ x: nx*FORCE, y: ny*FORCE + 2, z: nz*FORCE + (Math.random()-0.5)*2 }, true);
+            b.rb.applyImpulse({ x: -nx*FORCE, y: -ny*FORCE + 2, z: -nz*FORCE + (Math.random()-0.5)*2 }, true);
+            a.rb.applyTorqueImpulse({ x: (Math.random()-0.5)*0.4, y: (Math.random()-0.5)*0.4, z: (Math.random()-0.5)*0.4 }, true);
+            b.rb.applyTorqueImpulse({ x: (Math.random()-0.5)*0.4, y: (Math.random()-0.5)*0.4, z: (Math.random()-0.5)*0.4 }, true);
+          }
+        }
+      }
+    }
+
+    // ── stuck 감지 + nudge ────────────────────────────────────
     let nudgeFrameCount = 0;
     const lastSnapshot = new Map();     // marble.id → [x, y]
     const stuckStreak = new Map();      // marble.id → 연속 stuck 횟수
@@ -489,8 +521,10 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
           handleCollisionEvents();
           track.tick(world.timestep);
           for (const m of marbles) m.sync();
-          // stuck nudge — 90 step 마다
-          if (++nudgeFrameCount % 90 === 0) nudgeStuckMarbles();
+          // stuck nudge + cluster 분리
+          nudgeFrameCount++;
+          if (nudgeFrameCount % 15 === 0) breakClusters();       // 0.25초 마다 cluster 즉시 분리
+          if (nudgeFrameCount % 30 === 0) nudgeStuckMarbles();   // 0.5초 마다 stuck 검사
         }
         // 안전망 — 60초 후 끼인 구슬 강제 종료
         const elapsed = (now - runStartTime) / 1000;
