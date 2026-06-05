@@ -101,7 +101,7 @@ export function buildTrack({ scene, world, RAPIER }) {
   const pinZones = [
     { yMin: 22, yMax: 27, rows: 2, cols: 5, offset: true,  mat: pinMatPurple },
     { yMin: 5,  yMax: 10, rows: 2, cols: 5, offset: false, mat: pinMatCyan },
-    { yMin: -15, yMax: -10, rows: 2, cols: 5, offset: true,  mat: pinMatPink },
+    { yMin: -13, yMax: -10, rows: 1, cols: 5, offset: true, mat: pinMatPink }, // 시소 위 1줄
   ];
   for (const zone of pinZones) {
     const stepY = (zone.yMax - zone.yMin) / zone.rows;
@@ -127,10 +127,14 @@ export function buildTrack({ scene, world, RAPIER }) {
     }
   }
 
-  // ── 게이트 + 풍차 + 결승선 ───────────────────────────────────
+  // ── 게이트 + 풍차 ────────────────────────────────────────
   const gate = createGate({ scene, world, RAPIER, y: TRACK_TOP_Y - 1.5 });
   const windmill = createWindmill({ scene, world, RAPIER, y: 17, mat: windmillMat });
-  const windmill2 = createWindmill({ scene, world, RAPIER, y: -23, mat: windmillMat, reverse: true });
+  // 풍차 #2 (y=-23) 제거 — funnel 자리 양보. 결승 직전 박진감.
+
+  // ── 깔때기 (Funnel) — 결승선 직전 V자 좁아지는 가이드 ─────
+  // 위쪽 폭 TRACK_WIDTH 전체, 아래쪽 폭 3 (출구). 구슬 자기들끼리 부딪치며 순위 변동.
+  buildFunnel({ scene, world, RAPIER, yTop: -20, yBottom: -28, exitWidth: 3, mat: wallMat });
 
   // ── 핀볼 범퍼 — y=14 좌우 ─────────────────────────────────
   const bumpers = [
@@ -146,8 +150,8 @@ export function buildTrack({ scene, world, RAPIER }) {
   const spinner1 = createSpinner({ scene, world, RAPIER, x: -3.5, y: -7, mat: diskMat, dir: 1 });
   const spinner2 = createSpinner({ scene, world, RAPIER, x:  3.5, y: -7, mat: diskMat, dir: -1 });
 
-  // ── 시소 (좌우 진자) — y=-19 ──────────────────────────────
-  const seesaw = createSeesaw({ scene, world, RAPIER, y: -19, mat: seesawMat });
+  // ── 시소 (좌우 진자) — y=-15 (funnel 보다 위) ────────────
+  const seesaw = createSeesaw({ scene, world, RAPIER, y: -16, mat: seesawMat });
 
   // ── 결승선 (sensor — mesh 없음, 라인만) ──────────────────────
   const finishGlow = new THREE.PointLight(0x22c55e, 12, 20);
@@ -200,7 +204,6 @@ export function buildTrack({ scene, world, RAPIER }) {
     bumperHandles, jumpPadHandles, bumpers, jumpPad,
     tick(dt) {
       windmill.tick(dt);
-      windmill2.tick(dt);
       gate.tick(dt);
       spinner1.tick(dt);
       spinner2.tick(dt);
@@ -409,6 +412,63 @@ function createJumpPad({ scene, world, RAPIER, x, y, mat }) {
       }
     },
   };
+}
+
+// ─────────────────────────────────────────────────────────────
+// 깔때기 (Funnel) — 좌우 비스듬한 벽 두 개로 V자 좁아지는 가이드.
+// 결승선 직전 구슬을 좁은 통로로 모음 → 박진감 + 순위 변동.
+// ─────────────────────────────────────────────────────────────
+function buildFunnel({ scene, world, RAPIER, yTop, yBottom, exitWidth, mat }) {
+  const halfTop = (TRACK_WIDTH - 0.6) / 2;   // 위쪽 끝 (벽 안쪽)
+  const halfBot = exitWidth / 2;              // 아래쪽 끝 (출구 절반)
+  const dy = yTop - yBottom;
+  const dx = halfTop - halfBot;
+  const length = Math.hypot(dx, dy);          // 사선 길이
+  const angle = Math.atan2(dx, dy);           // 수직 대비 각도 — 좌측 벽 기울기 (양수 → 안쪽으로 기울)
+  const thickness = 0.4;
+  const depth = TRACK_DEPTH;
+
+  // 시각 강조 — 결승 분위기 (살짝 emissive)
+  const funnelMat = new THREE.MeshStandardMaterial({
+    color: 0x1e293b, roughness: 0.5, metalness: 0.5,
+    emissive: 0x10b981, emissiveIntensity: 0.18,
+  });
+  const edgeMat = new THREE.MeshBasicMaterial({ color: 0x10b981 });
+
+  function addSlope(sign) {
+    // 중심 좌표 — 위·아래 끝의 중점
+    const cx = sign * (halfTop + halfBot) / 2;
+    const cy = (yTop + yBottom) / 2;
+    const rotZ = sign * (-angle);  // 좌측(sign=-1)은 안쪽으로 기우, 우측(sign=+1)도 마찬가지
+
+    // Three mesh
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(thickness, length, depth), funnelMat);
+    mesh.position.set(cx, cy, 0);
+    mesh.rotation.z = rotZ;
+    scene.add(mesh);
+    // 시각 강조 — 안쪽 면의 빛나는 라인 (얇은 mesh)
+    const edge = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, length, 0.06),
+      edgeMat
+    );
+    edge.position.set(cx - sign * (thickness/2 + 0.05), cy, depth/2 - 0.05);
+    edge.rotation.z = rotZ;
+    scene.add(edge);
+
+    // Rapier collider
+    const rb = world.createRigidBody(
+      RAPIER.RigidBodyDesc.fixed().setTranslation(cx, cy, 0)
+    );
+    const half = rotZ / 2;
+    world.createCollider(
+      RAPIER.ColliderDesc.cuboid(thickness/2, length/2, depth/2)
+        .setRotation({ x: 0, y: 0, z: Math.sin(half), w: Math.cos(half) })
+        .setRestitution(0.55).setFriction(0.18),
+      rb
+    );
+  }
+  addSlope(-1);   // 좌측 벽 \
+  addSlope(+1);   // 우측 벽 /
 }
 
 // ─────────────────────────────────────────────────────────────
