@@ -362,16 +362,15 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
           const dx = at.x - bt.x, dy = at.y - bt.y, dz = at.z - bt.z;
           const d = Math.hypot(dx, dy, dz);
           // cluster 조건: 가깝고 (1.0 이하) 둘 다 거의 정지 (속도 1 이하)
-          if (d < 1.0 && aSpeed < 1.5 && bSpeed < 1.5) {
-            // 분리 방향 normal
+          // 진짜 cluster 만 잡음 — 거리 0.85m 이하 (구슬 지름 0.76 의 살짝 위) + 둘 다 0.8 이하 속도
+          // 임펄스 약하게 (force 2.5) — 자연스럽게 분리, 격렬한 튕김 X
+          if (d < 0.85 && aSpeed < 0.8 && bSpeed < 0.8) {
             const nx = d > 0.01 ? dx/d : (Math.random()-0.5);
             const ny = d > 0.01 ? dy/d : (Math.random()-0.5);
             const nz = d > 0.01 ? dz/d : 0;
-            const FORCE = 6;
-            a.rb.applyImpulse({ x: nx*FORCE, y: ny*FORCE + 2, z: nz*FORCE + (Math.random()-0.5)*2 }, true);
-            b.rb.applyImpulse({ x: -nx*FORCE, y: -ny*FORCE + 2, z: -nz*FORCE + (Math.random()-0.5)*2 }, true);
-            a.rb.applyTorqueImpulse({ x: (Math.random()-0.5)*0.4, y: (Math.random()-0.5)*0.4, z: (Math.random()-0.5)*0.4 }, true);
-            b.rb.applyTorqueImpulse({ x: (Math.random()-0.5)*0.4, y: (Math.random()-0.5)*0.4, z: (Math.random()-0.5)*0.4 }, true);
+            const FORCE = 2.5;
+            a.rb.applyImpulse({ x: nx*FORCE, y: ny*FORCE + 0.5, z: nz*FORCE }, true);
+            b.rb.applyImpulse({ x: -nx*FORCE, y: -ny*FORCE + 0.5, z: -nz*FORCE }, true);
           }
         }
       }
@@ -416,16 +415,11 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
             stuckStreak.set(m.id, 0);
             STAGE(`텔레포트: ${m.name} (3회 stuck)`);
           } else {
-            // 1-2회 stuck — random impulse 강하게
+            // 1회 stuck — 약한 random impulse (자연스럽게 풀리도록)
             m.rb.applyImpulse({
-              x: (Math.random() - 0.5) * 8,
-              y: 1.8 + Math.random() * 1.2,
-              z: (Math.random() - 0.5) * 3,
-            }, true);
-            m.rb.applyTorqueImpulse({
-              x: (Math.random() - 0.5) * 0.6,
-              y: (Math.random() - 0.5) * 0.6,
-              z: (Math.random() - 0.5) * 0.6,
+              x: (Math.random() - 0.5) * 3,
+              y: 0.8,
+              z: (Math.random() - 0.5) * 1.2,
             }, true);
           }
         } else {

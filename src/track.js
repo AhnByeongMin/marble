@@ -176,10 +176,9 @@ function buildVerticalTrack({ scene, world, RAPIER }) {
     }
   }
 
-  // ── 게이트 ────────────────────────────────────────────
+  // ── 게이트 + 풍차 (복원) ────────────────────────────────
   const gate = createGate({ scene, world, RAPIER, y: TRACK_TOP_Y - 1.5 });
-  // 풍차 제거 — 카메라 follow 시 시야 밖으로 빠져 사용자에게 '투명한 collider'
-  // 처럼 보이고, 풍차 hub+blade 가 구슬 받침 cluster 유발 (2026-06-05 사용자 진단).
+  const windmill = createWindmill({ scene, world, RAPIER, y: 17, mat: windmillMat });
 
   // ── 깔때기 (Funnel) — 결승선 직전 V자 좁아지는 가이드 ─────
   // 위쪽 폭 TRACK_WIDTH 전체, 아래쪽 폭 3 (출구). 구슬 자기들끼리 부딪치며 순위 변동.
@@ -250,14 +249,16 @@ function buildVerticalTrack({ scene, world, RAPIER }) {
   const jumpPadHandles = new Set([jumpPad.colliderHandle]);
 
   return {
-    gate,
+    windmill, gate,
     finishColliderHandle: finishCollider.handle,
     bumperHandles, jumpPadHandles, bumpers, jumpPad,
     applyMode(mode) {
+      windmill.setSpeed(mode.windmillSpeed || 0.7);
       spinner1.setSpeed(mode.spinnerSpeed || 2.4);
       spinner2.setSpeed(mode.spinnerSpeed || 2.4);
     },
     tick(dt) {
+      windmill.tick(dt);
       gate.tick(dt);
       spinner1.tick(dt);
       spinner2.tick(dt);

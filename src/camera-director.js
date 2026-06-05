@@ -58,13 +58,16 @@ export class CameraDirector {
     else this.state = STATE.FOLLOW;
 
     if (this.state === STATE.FOLLOW && leader) {
-      this.target.set(leader.x * 0.25, leader.y + 4, 22);
-      this.lookAt.set(leader.x * 0.12, leader.y - 3, 0);
+      // 카메라 z 거리 ↑ (22 → 28) — 트랙 위쪽 풍차 등 시야에 들어오게.
+      // y offset +4 → +6 (선두 위쪽 풍차/장애물 보임).
+      // lookAt y -3 → -1 (좀 더 위쪽 향함).
+      this.target.set(leader.x * 0.2, leader.y + 6, 28);
+      this.lookAt.set(leader.x * 0.1, leader.y - 1, 0);
     } else if (this.state === STATE.FINISH) {
-      this.target.set(0, spec.finishY + 3, 16);
+      this.target.set(0, spec.finishY + 3, 18);
       this.lookAt.set(0, spec.finishY + 0.5, 0);
     } else {
-      this.target.set(0, spec.finishY + 5, 18);
+      this.target.set(0, spec.finishY + 5, 20);
       this.lookAt.set(0, spec.finishY, 0);
     }
     this._applyLerp(dt);
