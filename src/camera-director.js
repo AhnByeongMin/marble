@@ -1,55 +1,103 @@
-// 카메라 상태 머신 — FOLLOW (선두 따라감) / FINISH (결승선 줌) / RESULT
-// 트랙 시야 넓게 + 부드러운 lerp. delta-시간 보정.
+// 카메라 — 모드별 cameraMode 따라 동작
+//   'top-follow' (vertical) — 선두 y 따라 위에서 내려다보기
+//   'side-follow' (race) — 선두 x 따라 측면에서 보기
 
 import * as THREE from 'three';
-import { TRACK } from './track.js';
+import { TRACK_SPECS } from './track.js';
 
 const STATE = { FOLLOW: 'follow', FINISH: 'finish', RESULT: 'result' };
 
-// 카메라 거리 — 트랙 폭(14) 의 fov 55 환산 + 시각 여유. 약간 위에서 내려다보는 각도.
-const FOLLOW_Z = 22;
-const FINISH_Z = 16;
-const RESULT_Z = 18;
-
 export class CameraDirector {
-  constructor(camera) {
+  constructor(camera, cameraMode = 'top-follow') {
     this.camera = camera;
+    this.cameraMode = cameraMode;
     this.state = STATE.FOLLOW;
-    this.target = new THREE.Vector3(0, TRACK.topY - 4, FOLLOW_Z);
-    this.lookAt = new THREE.Vector3(0, TRACK.topY - 6, 0);
-    this.currentLookAt = new THREE.Vector3().copy(this.lookAt);
+    this.target = new THREE.Vector3();
+    this.lookAt = new THREE.Vector3();
+    this.currentLookAt = new THREE.Vector3();
+    this._setInitial();
     camera.position.copy(this.target);
     camera.lookAt(this.currentLookAt);
   }
 
-  update(marbles, dt) {
-    const leaders = marbles.filter(m => !m.finished).map(m => ({
-      y: m.rb.translation().y, x: m.rb.translation().x, m
-    })).sort((a, b) => a.y - b.y);
+  _setInitial() {
+    if (this.cameraMode === 'side-follow') {
+      const spec = TRACK_SPECS.race;
+      this.target.set(spec.startX, 0, 22);
+      this.lookAt.set(spec.startX, 0, 0);
+    } else {
+      const spec = TRACK_SPECS.vertical;
+      this.target.set(0, spec.topY - 4, 22);
+      this.lookAt.set(0, spec.topY - 6, 0);
+    }
+    this.currentLookAt.copy(this.lookAt);
+  }
 
+  setCameraMode(mode) {
+    this.cameraMode = mode;
+    this._setInitial();
+    this.camera.position.copy(this.target);
+    this.camera.lookAt(this.currentLookAt);
+  }
+
+  update(marbles, dt) {
+    if (this.cameraMode === 'side-follow') return this._updateRace(marbles, dt);
+    return this._updateVertical(marbles, dt);
+  }
+
+  _updateVertical(marbles, dt) {
+    const spec = TRACK_SPECS.vertical;
+    const leaders = marbles.filter(m => !m.finished).map(m => ({
+      y: m.rb.translation().y, x: m.rb.translation().x, m,
+    })).sort((a, b) => a.y - b.y);
     const leader = leaders[0];
     const allFinished = marbles.length > 0 && marbles.every(m => m.finished);
-    const nearFinish = leader && leader.y <= TRACK.finishY + 9;
-
+    const nearFinish = leader && leader.y <= spec.finishY + 9;
     if (allFinished) this.state = STATE.RESULT;
     else if (nearFinish) this.state = STATE.FINISH;
     else this.state = STATE.FOLLOW;
 
     if (this.state === STATE.FOLLOW && leader) {
-      // 선두 따라감 — leader.x 영향 적게 (트랙 폭이 보이도록 가운데 위주),
-      // y 는 leader 보다 약간 위에서 내려다보기
-      this.target.set(leader.x * 0.25, leader.y + 4, FOLLOW_Z);
+      this.target.set(leader.x * 0.25, leader.y + 4, 22);
       this.lookAt.set(leader.x * 0.12, leader.y - 3, 0);
     } else if (this.state === STATE.FINISH) {
-      // 결승선 정면 — 좀 더 후방에서
-      this.target.set(0, TRACK.finishY + 3, FINISH_Z);
-      this.lookAt.set(0, TRACK.finishY + 0.5, 0);
-    } else if (this.state === STATE.RESULT) {
-      this.target.set(0, TRACK.finishY + 5, RESULT_Z);
-      this.lookAt.set(0, TRACK.finishY, 0);
+      this.target.set(0, spec.finishY + 3, 16);
+      this.lookAt.set(0, spec.finishY + 0.5, 0);
+    } else {
+      this.target.set(0, spec.finishY + 5, 18);
+      this.lookAt.set(0, spec.finishY, 0);
     }
+    this._applyLerp(dt);
+  }
 
-    // lerp 부드럽게 — FOLLOW 0.06, FINISH 약간 빠르게
+  _updateRace(marbles, dt) {
+    const spec = TRACK_SPECS.race;
+    // 레이스 — 선두 = X 가장 큰 (결승 가까운)
+    const leaders = marbles.filter(m => !m.finished).map(m => ({
+      x: m.rb.translation().x, y: m.rb.translation().y, m,
+    })).sort((a, b) => b.x - a.x);
+    const leader = leaders[0];
+    const allFinished = marbles.length > 0 && marbles.every(m => m.finished);
+    const nearFinish = leader && leader.x >= spec.finishX - 10;
+    if (allFinished) this.state = STATE.RESULT;
+    else if (nearFinish) this.state = STATE.FINISH;
+    else this.state = STATE.FOLLOW;
+
+    if (this.state === STATE.FOLLOW && leader) {
+      // 측면 follow — X 따라가며 살짝 위에서
+      this.target.set(leader.x - 4, leader.y + 4, 18);
+      this.lookAt.set(leader.x + 2, leader.y - 1, 0);
+    } else if (this.state === STATE.FINISH) {
+      this.target.set(spec.finishX - 6, 1, 14);
+      this.lookAt.set(spec.finishX, 0, 0);
+    } else {
+      this.target.set(spec.finishX - 4, 2, 16);
+      this.lookAt.set(spec.finishX, 0, 0);
+    }
+    this._applyLerp(dt);
+  }
+
+  _applyLerp(dt) {
     const alpha60 = this.state === STATE.FINISH ? 0.07 : 0.06;
     const alpha = 1 - Math.pow(1 - alpha60, dt * 60);
     this.camera.position.lerp(this.target, alpha);

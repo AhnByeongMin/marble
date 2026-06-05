@@ -29,7 +29,7 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
 
     const { createScene } = await import('./scene.js');
     const { initPhysics } = await import('./physics.js');
-    const { buildTrack, TRACK } = await import('./track.js');
+    const { buildTrack, TRACK_SPECS: SPECS } = await import('./track.js');
     const { createMarble } = await import('./marble.js');
     const { Leaderboard } = await import('./leaderboard.js');
     const { CameraDirector } = await import('./camera-director.js');
@@ -74,8 +74,38 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
     // 모바일 패널 토글
     panelToggle?.addEventListener('click', () => panel.classList.toggle('collapsed'));
 
-    // ── 모드 셀렉터 ─────────────────────────────────────────────
-    let currentMode = MODES.CLASSIC;
+    // ── 모드 + localStorage (모드 전환 시 reload, state 복원) ──
+    const LS_KEY = 'marble.state';
+    function saveState() {
+      try {
+        localStorage.setItem(LS_KEY, JSON.stringify({
+          mode: currentMode.id,
+          participants: participantsTA.value,
+          prizes: prizesUI.items.map(it => it.text),
+        }));
+      } catch {}
+    }
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(LS_KEY);
+        if (!raw) return null;
+        return JSON.parse(raw);
+      } catch { return null; }
+    }
+    const savedState = loadState();
+    let currentMode = savedState ? getMode(savedState.mode) : MODES.CLASSIC;
+    // 저장된 입력 복원
+    if (savedState) {
+      if (savedState.participants) {
+        participantsTA.value = savedState.participants;
+      }
+      if (Array.isArray(savedState.prizes) && savedState.prizes.length) {
+        prizesUI.items = savedState.prizes.map(text => ({ text }));
+        prizesUI.render();
+      }
+    }
+    participantsUI.refresh();
+
     const modesEl = document.getElementById('modes');
     function renderModes() {
       modesEl.innerHTML = '';
@@ -86,14 +116,29 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
         btn.innerHTML = `<span class="m-emoji">${m.emoji}</span><span class="m-label">${m.label}</span>`;
         btn.title = m.description;
         btn.addEventListener('click', () => {
-          if (running) return;          // 진행 중 모드 변경 X
+          if (running) return;
+          if (m.id === currentMode.id) return;
+          // 트랙/카메라 다르면 reload (안전한 전환)
           currentMode = m;
-          renderModes();
+          saveState();
+          location.reload();
         });
         modesEl.appendChild(btn);
       }
     }
     renderModes();
+    // 입력 변경 시 자동 저장
+    participantsTA.addEventListener('input', saveState);
+    // PrizesUI 의 input 도 — render 후 input listener 가 있음. 매번 wrapped 으로 saveState.
+    const origPrizesRender = prizesUI.render.bind(prizesUI);
+    prizesUI.render = function() {
+      origPrizesRender();
+      // 각 input 의 input 이벤트에 saveState 추가
+      this.container.querySelectorAll('input').forEach(inp => {
+        inp.addEventListener('input', saveState);
+      });
+    };
+    prizesUI.render();   // 이벤트 부착
 
     // ── Three / Rapier ──────────────────────────────────────────
     showStatus('Three.js 씬 준비…');
@@ -105,10 +150,12 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
     STAGE('physics OK');
 
     showStatus('트랙 생성…');
-    const track = buildTrack({ scene, world, RAPIER });
-    STAGE('track OK');
+    const track = buildTrack({ scene, world, RAPIER, trackType: currentMode.trackType });
+    STAGE(`track OK (${currentMode.trackType})`);
+    // 모드별 spec
+    const spec = SPECS[currentMode.trackType];
 
-    const cameraDirector = new CameraDirector(camera);
+    const cameraDirector = new CameraDirector(camera, currentMode.cameraMode);
     const leaderboard = new Leaderboard(leaderboardEl);
 
     // ── 시뮬 상태 ───────────────────────────────────────────────
@@ -137,37 +184,59 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
 
     function spawnMarbles(defs) {
       clearMarbles();
-      // 형평성 1단계 — spawn 순서 셔플 (같은 입력이라도 매번 다른 위치 매핑)
+      // 형평성 1 — 순서 셔플
       const shuffled = [...defs];
       for (let i = shuffled.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
       }
-      const startY = TRACK.topY - 0.4;
-      // 형평성 2단계 — spawn 영역 좁힘 (가운데 모아 시작 위치 격차 ↓)
-      const usableW = Math.min(6, TRACK.width - 4);
-      const cols = Math.min(shuffled.length, 6);
       shuffled.forEach((def, i) => {
-        const c = i % cols;
-        const r = Math.floor(i / cols);
-        const x = -usableW / 2 + (usableW / Math.max(1, cols - 1)) * c + (Math.random() - 0.5) * 0.5;
-        const y = startY + r * 1.0 + (Math.random() - 0.5) * 0.2;
-        const z = (Math.random() - 0.5) * (TRACK.depth - 0.6);
+        let x, y, z;
+        if (spec.type === 'race') {
+          // 레이스 — Z 축에 일렬, X 는 시작점 + 약간 noise, Y 는 약간 위
+          const cols = Math.min(shuffled.length, 4);
+          const c = i % cols;
+          const r = Math.floor(i / cols);
+          const zRange = spec.depth - 0.6;
+          x = spec.startX + 0.5 + r * 0.8 + (Math.random() - 0.5) * 0.3;
+          y = 2 + (Math.random() - 0.5) * 0.4;
+          z = -zRange/2 + (zRange / Math.max(1, cols - 1)) * c + (Math.random() - 0.5) * 0.2;
+        } else {
+          // 수직 — 게이트 위 격자
+          const startY = spec.topY - 0.4;
+          const usableW = Math.min(6, spec.width - 4);
+          const cols = Math.min(shuffled.length, 6);
+          const c = i % cols;
+          const r = Math.floor(i / cols);
+          x = -usableW / 2 + (usableW / Math.max(1, cols - 1)) * c + (Math.random() - 0.5) * 0.5;
+          y = startY + r * 1.0 + (Math.random() - 0.5) * 0.2;
+          z = (Math.random() - 0.5) * (spec.depth - 0.6);
+        }
         const m = createMarble({ scene, world, RAPIER, def, x, y, z });
         marbles.push(m);
       });
-      STAGE(`구슬 ${shuffled.length}개 spawn (셔플됨)`);
+      STAGE(`구슬 ${shuffled.length}개 spawn (${spec.type})`);
     }
 
-    // 형평성 3단계 — 게이트 열린 직후 모드별 임펄스
+    // 모드별 시작 임펄스 — race 는 X+ 방향으로 초기 추진
     function chaosImpulse() {
       const imp = currentMode.startImpulse;
       for (const m of marbles) {
-        m.rb.applyImpulse({
-          x: (Math.random() - 0.5) * imp.x * 2,
-          y: imp.y + Math.random() * imp.y,
-          z: (Math.random() - 0.5) * imp.z * 2,
-        }, true);
+        if (spec.type === 'race') {
+          // 레이스 — X+ 방향 추진 + 약간의 좌우/상하 noise
+          m.rb.applyImpulse({
+            x: imp.x + Math.random() * imp.x * 0.4,
+            y: imp.y + Math.random() * imp.y,
+            z: (Math.random() - 0.5) * imp.z * 2,
+          }, true);
+        } else {
+          // 수직 — 좌우 분산
+          m.rb.applyImpulse({
+            x: (Math.random() - 0.5) * imp.x * 2,
+            y: imp.y + Math.random() * imp.y,
+            z: (Math.random() - 0.5) * imp.z * 2,
+          }, true);
+        }
         m.rb.applyTorqueImpulse({
           x: (Math.random() - 0.5) * 0.4,
           y: (Math.random() - 0.5) * 0.4,
@@ -179,9 +248,10 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
     function previewMarbles() {
       const defs = participantsUI.getMarbles();
       if (defs.length === 0) return;
+      // preview 시 mode gravity 적용 — 안 그러면 default Rapier gravity
+      world.gravity = currentMode.gravity || { x: 0, y: -28, z: 0 };
       spawnMarbles(defs);
       track.gate.reset();
-      // 안착시킴 — 30 step 돌려 게이트 위에서 정착
       for (let i = 0; i < 30; i++) {
         world.step(eventQueue);
         track.tick(world.timestep);
@@ -356,9 +426,9 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
 
       await countdown();
 
-      // 모드별 파라미터 적용 — gravity + 풍차/스피너 속도
-      world.gravity = { x: 0, y: currentMode.gravityY, z: 0 };
-      track.applyMode(currentMode);
+      // 모드별 gravity (race 는 X+ 추진 포함)
+      world.gravity = currentMode.gravity || { x: 0, y: -28, z: 0 };
+      if (track.applyMode) track.applyMode(currentMode);
       track.gate.open();
       // 형평성 — 게이트 열린 순간 모드별 임펄스
       chaosImpulse();
