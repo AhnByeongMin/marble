@@ -106,6 +106,10 @@ export function buildTrack({ scene, world, RAPIER }) {
     }
   }
 
+  // ── 출발 게이트 (트랙 최상단) ────────────────────────
+  // 시작 전엔 구슬을 떠받침. start() 호출 시 옆으로 슬라이드 + collider 비활성.
+  const gate = createGate({ scene, world, RAPIER, y: TRACK_TOP_Y - 1.5 });
+
   // ── 회전 풍차 (y ≈ 0) ────────────────────────────────
   const windmill = createWindmill({ scene, world, RAPIER, y: 0, mat: windmillMat });
 
@@ -142,10 +146,65 @@ export function buildTrack({ scene, world, RAPIER }) {
 
   return {
     windmill,
+    gate,
     finishColliderHandle: finishCollider.handle,
     // 매 프레임 tick 호출용
     tick(dt) {
       windmill.tick(dt);
+      gate.tick(dt);
+    },
+  };
+}
+
+// 출발 게이트 — 시작 전 구슬을 떠받침. open() 시 옆으로 슬라이드 + 비활성.
+function createGate({ scene, world, RAPIER, y }) {
+  const gateGeom = new THREE.BoxGeometry(TRACK_WIDTH - 0.6, 0.4, TRACK_DEPTH);
+  const gateMat = new THREE.MeshStandardMaterial({
+    color: 0xf43f5e, roughness: 0.4, metalness: 0.4,
+    emissive: 0x9f1239, emissiveIntensity: 0.4,
+  });
+  const mesh = new THREE.Mesh(gateGeom, gateMat);
+  mesh.position.set(0, y, 0);
+  scene.add(mesh);
+
+  // KinematicPositionBased — 이동 가능. 처음엔 트랙 정중앙.
+  const rb = world.createRigidBody(
+    RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, y, 0)
+  );
+  const collider = world.createCollider(
+    RAPIER.ColliderDesc.cuboid((TRACK_WIDTH - 0.6)/2, 0.2, TRACK_DEPTH/2)
+      .setRestitution(0.1).setFriction(0.8),
+    rb
+  );
+
+  let opening = false;
+  let slideX = 0;
+  const TARGET_SLIDE = TRACK_WIDTH + 2;  // 트랙 옆으로 완전히 빠짐
+  const SLIDE_SPEED = 18;                // m/sec
+
+  return {
+    mesh,
+    open() {
+      if (opening) return;
+      opening = true;
+      collider.setEnabled(false);  // 즉시 충돌 비활성
+    },
+    reset() {
+      opening = false;
+      slideX = 0;
+      mesh.visible = true;
+      mesh.position.set(0, y, 0);
+      rb.setNextKinematicTranslation({ x: 0, y, z: 0 });
+      collider.setEnabled(true);
+    },
+    tick(dt) {
+      if (!opening) return;
+      if (slideX >= TARGET_SLIDE) return;
+      slideX = Math.min(TARGET_SLIDE, slideX + SLIDE_SPEED * dt);
+      mesh.position.x = slideX;
+      rb.setNextKinematicTranslation({ x: slideX, y, z: 0 });
+      // 끝까지 슬라이드되면 mesh 숨김
+      if (slideX >= TARGET_SLIDE) mesh.visible = false;
     },
   };
 }

@@ -101,7 +101,8 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
 
     function spawnMarbles(defs) {
       clearMarbles();
-      const startY = TRACK.topY - 1.2;
+      // 게이트(y = topY-1.5) 위에 spawn — y = topY-0.4 ~ 더 위로 stacking
+      const startY = TRACK.topY - 0.4;
       const usableW = TRACK.width - 2;
       const cols = Math.min(defs.length, 8);
       defs.forEach((def, i) => {
@@ -113,7 +114,22 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
         const m = createMarble({ scene, world, RAPIER, def, x, y, z });
         marbles.push(m);
       });
-      STAGE(`구슬 ${defs.length}개 spawn`);
+      STAGE(`구슬 ${defs.length}개 spawn (게이트 위 대기)`);
+    }
+
+    // 입력 변경 시 자동 preview — 게이트 위에 구슬 미리 보여줌
+    function previewMarbles() {
+      const defs = participantsUI.getMarbles();
+      if (defs.length === 0) return;
+      spawnMarbles(defs);
+      track.gate.reset();
+      // 첫 step 한 번만 — 게이트 위에 안착 (1 step 안에 떨어지지 않음, 게이트가 받침)
+      for (let i = 0; i < 30; i++) {
+        world.step(eventQueue);
+        track.tick(world.timestep);
+      }
+      for (const m of marbles) m.sync();
+      eventQueue.drainCollisionEvents(() => {});  // 게이트 안착 중 발생한 collision 무시
     }
 
     function handleCollisionEvents() {
@@ -135,30 +151,46 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
 
     let runStartTime = 0;
     function startRun() {
-      const defs = participantsUI.getMarbles();
-      if (defs.length === 0) {
-        alert('참가자를 1명 이상 입력해주세요.');
-        return;
+      // 구슬이 게이트 위에 없으면 spawn 부터
+      if (marbles.length === 0) {
+        const defs = participantsUI.getMarbles();
+        if (defs.length === 0) {
+          alert('참가자를 1명 이상 입력해주세요.');
+          return;
+        }
+        spawnMarbles(defs);
+        track.gate.reset();
       }
       hideResult(resultOverlay);
-      spawnMarbles(defs);
+      track.gate.open();   // 게이트 슬라이드 — 구슬 떨어지기 시작
       running = true;
       runStartTime = performance.now();
+      STAGE('▶ 출발 — 게이트 열림');
     }
 
     startBtn.addEventListener('click', startRun);
     resetBtn.addEventListener('click', () => {
       clearMarbles();
       running = false;
+      track.gate.reset();
       hideResult(resultOverlay);
+      // 입력 기반 preview 다시
+      previewMarbles();
     });
 
-    // 자동 시작 — 사용자가 즉시 동작 보도록 (한 번만)
-    setTimeout(() => {
-      hideStatus();
-      STAGE('자동 시작');
-      startRun();
-    }, 400);
+    // 입력 textarea 변경 시 preview 새로 — 페이지 진입 시 1회 자동 preview
+    let previewTimer = null;
+    function schedulePreview() {
+      clearTimeout(previewTimer);
+      previewTimer = setTimeout(() => {
+        if (!running) previewMarbles();
+      }, 300);
+    }
+    participantsTA.addEventListener('input', schedulePreview);
+
+    // 페이지 진입 첫 preview
+    hideStatus();
+    previewMarbles();
 
     // ── 메인 루프 ───────────────────────────────────────────────
     let lastT = performance.now();
