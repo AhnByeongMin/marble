@@ -93,25 +93,32 @@ export function buildTrack({ scene, world, RAPIER }) {
     scene.add(line);
   }
 
-  // ── 핀 격자 (3 zone, 색 다르게) ─────────────────────────────
-  const pinRadius = 0.32;
-  const pinHeight = TRACK_DEPTH;
+  // ── 핀 격자 — 끼임 방지 위해 모두 stagger, 안쪽 polygon ─────
+  // 설계 원칙:
+  //   1) pinHeight < TRACK_DEPTH (z 벽에 박히지 않게)
+  //   2) 가장 바깥 핀 x 안쪽 (벽 collider 안 침범)
+  //   3) 모든 zone offset=true — 두 row 정렬 시 좁은 통로 발생 방지
+  //   4) 핀 격자 간격 충분히 (구슬 지름 0.76 × 3 이상)
+  const pinRadius = 0.3;
+  const pinHeight = TRACK_DEPTH - 0.4;          // 벽 z 안 박힘 (트랙 1.8 → 핀 1.4)
+  const pinUsableW = TRACK_WIDTH - 4;           // 벽-핀 간격 1.5 (구슬 통과 여유)
   const pinGeom = new THREE.CylinderGeometry(pinRadius, pinRadius, pinHeight, 14);
 
   const pinZones = [
-    { yMin: 22, yMax: 27, rows: 2, cols: 5, offset: true,  mat: pinMatPurple },
-    { yMin: 5,  yMax: 10, rows: 2, cols: 5, offset: false, mat: pinMatCyan },
-    { yMin: -13, yMax: -10, rows: 1, cols: 5, offset: true, mat: pinMatPink }, // 시소 위 1줄
+    { yMin: 22, yMax: 26, rows: 2, cols: 4, mat: pinMatPurple },
+    { yMin: 6,  yMax: 10, rows: 2, cols: 4, mat: pinMatCyan   },
+    { yMin: -12, yMax: -10, rows: 1, cols: 4, mat: pinMatPink },
   ];
   for (const zone of pinZones) {
-    const stepY = (zone.yMax - zone.yMin) / zone.rows;
-    const usableW = TRACK_WIDTH - 2;
+    const stepY = (zone.yMax - zone.yMin) / Math.max(1, zone.rows);
     for (let r = 0; r < zone.rows; r++) {
       const y = zone.yMin + stepY * (r + 0.5);
-      const stagger = (zone.offset && r % 2 === 1) ? (usableW / zone.cols / 2) : 0;
-      for (let c = 0; c < zone.cols; c++) {
-        const x = -usableW/2 + (usableW / (zone.cols - 1)) * c + stagger;
-        if (Math.abs(x) > TRACK_WIDTH/2 - 0.4) continue;
+      // 모든 row stagger — r%2==1 만 좌우로 시프트 (cols 사이의 절반)
+      const stagger = (r % 2 === 1) ? (pinUsableW / zone.cols / 2) : 0;
+      const cols = zone.cols;
+      for (let c = 0; c < cols; c++) {
+        const x = -pinUsableW/2 + (pinUsableW / (cols - 1)) * c + stagger;
+        if (Math.abs(x) > pinUsableW/2 + 0.1) continue;
         const mesh = new THREE.Mesh(pinGeom, zone.mat);
         mesh.position.set(x, y, 0);
         mesh.rotation.x = Math.PI / 2;
@@ -120,7 +127,7 @@ export function buildTrack({ scene, world, RAPIER }) {
         world.createCollider(
           RAPIER.ColliderDesc.cylinder(pinHeight/2, pinRadius)
             .setRotation({ x: Math.sin(Math.PI/4), y: 0, z: 0, w: Math.cos(Math.PI/4) })
-            .setRestitution(0.55).setFriction(0.25),
+            .setRestitution(0.55).setFriction(0.2),
           rb
         );
       }
@@ -419,8 +426,10 @@ function createJumpPad({ scene, world, RAPIER, x, y, mat }) {
 // 결승선 직전 구슬을 좁은 통로로 모음 → 박진감 + 순위 변동.
 // ─────────────────────────────────────────────────────────────
 function buildFunnel({ scene, world, RAPIER, yTop, yBottom, exitWidth, mat }) {
-  const halfTop = (TRACK_WIDTH - 0.6) / 2;   // 위쪽 끝 (벽 안쪽)
-  const halfBot = exitWidth / 2;              // 아래쪽 끝 (출구 절반)
+  // 벽 내부 안쪽 = TRACK_WIDTH/2 - wallThickness/2 - 약간 여유 = 5.5 안쪽으로.
+  // funnel 위쪽 끝이 벽 안에 박히면 코너 끼임 발생 — 반드시 벽보다 안쪽에.
+  const halfTop = TRACK_WIDTH / 2 - 1.5;     // 위쪽 끝 x = ±5.5
+  const halfBot = exitWidth / 2;
   const dy = yTop - yBottom;
   const dx = halfTop - halfBot;
   const length = Math.hypot(dx, dy);          // 사선 길이
