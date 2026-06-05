@@ -287,119 +287,104 @@ function buildRaceTrack({ scene, world, RAPIER }) {
   const edgeMat = new THREE.MeshBasicMaterial({ color: 0x818cf8 });
   const finishLineMat = new THREE.MeshBasicMaterial({ color: 0x86efac });
 
-  // ── W자 waypoints — Y 변화 줄여 코너 각도 완만하게 (구슬 통과 ↑) ──
+  // ── W자 waypoints ─────────────────────────────────────
   const waypoints = [
-    { x: -28, y:  3 },   // 시작
-    { x: -17, y: -1 },   // 골 (완만)
-    { x:  -5, y:  3 },   // 봉우리 (완만)
-    { x:   8, y: -2 },   // 골
-    { x:  20, y:  2 },   // 봉우리
-    { x:  28, y: -4 },   // 결승
+    { x: -28, y:  3 },
+    { x: -17, y: -1 },
+    { x:  -5, y:  3 },
+    { x:   8, y: -2 },
+    { x:  20, y:  2 },
+    { x:  28, y: -4 },
   ];
-  const channelW = 3.8;          // 3.2 → 3.8 (구슬 통과 여유)
+  const channelW = 4.0;
   const wallThickness = 0.35;
   const wallDepth = D - 0.1;
 
-  // 각 segment 의 위/아래 라인 cuboid 생성
-  for (let i = 0; i < waypoints.length - 1; i++) {
-    const a = waypoints[i], b = waypoints[i + 1];
-    const cx = (a.x + b.x) / 2;
-    const cy = (a.y + b.y) / 2;
-    const dx = b.x - a.x, dy = b.y - a.y;
-    const segLen = Math.hypot(dx, dy) + 0.3;   // 약간 여유 (코너 겹침)
-    const angle = Math.atan2(dy, dx);
-    // segment 의 normal (수직 방향) — 위/아래 라인 offset
-    const nx = -Math.sin(angle), ny = Math.cos(angle);
-
-    for (const side of [+1, -1]) {
-      const wx = cx + nx * (channelW/2) * side;
-      const wy = cy + ny * (channelW/2) * side;
-      // mesh
-      const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(segLen, wallThickness, wallDepth),
-        wallMat
-      );
-      mesh.position.set(wx, wy, 0);
-      mesh.rotation.z = angle;
-      scene.add(mesh);
-      // 글로우 라인 (안쪽 면)
-      const lineLen = segLen - 0.4;
-      const line = new THREE.Mesh(
-        new THREE.BoxGeometry(lineLen, 0.06, 0.06),
-        edgeMat
-      );
-      line.position.set(
-        wx - nx * (wallThickness/2 + 0.04) * side,
-        wy - ny * (wallThickness/2 + 0.04) * side,
-        wallDepth/2 - 0.05,
-      );
-      line.rotation.z = angle;
-      scene.add(line);
-      // Rapier collider
-      const rb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(wx, wy, 0));
-      const half = angle / 2;
-      world.createCollider(
-        RAPIER.ColliderDesc.cuboid(segLen/2, wallThickness/2, wallDepth/2)
-          .setRotation({ x: 0, y: 0, z: Math.sin(half), w: Math.cos(half) })
-          .setRestitution(0.45).setFriction(0.18),
-        rb
-      );
-    }
-  }
-
-  // ── 코너 라운딩 — sphere cap 으로 직각 모서리 부드럽게 ──────
-  // 사용자 발견: 직각 모서리에 구슬이 양면 동시 접촉으로 균형잡혀 못 넘어감.
-  // 각 중간 waypoint 의 위/아래 line 끝점에 sphere — 둥근 표면 따라 굴러 통과.
-  const capRadius = wallThickness * 0.9;
-  const capGeom = new THREE.SphereGeometry(capRadius, 14, 10);
-  for (let i = 1; i < waypoints.length - 1; i++) {
-    const wp = waypoints[i];
-    const prevDx = wp.x - waypoints[i-1].x, prevDy = wp.y - waypoints[i-1].y;
-    const nextDx = waypoints[i+1].x - wp.x, nextDy = waypoints[i+1].y - wp.y;
-    const prevAng = Math.atan2(prevDy, prevDx);
-    const nextAng = Math.atan2(nextDy, nextDx);
-    for (const side of [+1, -1]) {
-      // 두 인접 segment 의 normal 평균 위치 (코너 점)
-      const nx1 = -Math.sin(prevAng), ny1 = Math.cos(prevAng);
-      const nx2 = -Math.sin(nextAng), ny2 = Math.cos(nextAng);
-      // 두 line 끝점 각각에 sphere
-      for (const [nx, ny] of [[nx1, ny1], [nx2, ny2]]) {
-        const sx = wp.x + nx * (channelW/2) * side;
-        const sy = wp.y + ny * (channelW/2) * side;
-        const mesh = new THREE.Mesh(capGeom, wallMat);
-        mesh.position.set(sx, sy, 0);
-        scene.add(mesh);
-        const rb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(sx, sy, 0));
-        world.createCollider(
-          RAPIER.ColliderDesc.ball(capRadius)
-            .setRestitution(0.5).setFriction(0.15),
-          rb
-        );
+  // ── Polygonal offset — 각 waypoint 에서 외각 이등분선 + 거리 보정으로
+  //    위/아래 line endpoint 정확히 계산 → 인접 segment line 이 갭 없이 연결.
+  function computeOffsetPoints(wps, halfCh) {
+    // 각 wp 의 위 (side=+1) / 아래 (side=-1) endpoint 두 개 반환
+    const N = wps.length;
+    const upper = [], lower = [];
+    for (let i = 0; i < N; i++) {
+      const prev = i > 0 ? wps[i-1] : null;
+      const next = i < N - 1 ? wps[i+1] : null;
+      // 인접 segment 방향
+      let d1 = null, d2 = null;
+      if (prev) {
+        const dx = wps[i].x - prev.x, dy = wps[i].y - prev.y;
+        const L = Math.hypot(dx, dy);
+        d1 = { x: dx / L, y: dy / L };
       }
+      if (next) {
+        const dx = next.x - wps[i].x, dy = next.y - wps[i].y;
+        const L = Math.hypot(dx, dy);
+        d2 = { x: dx / L, y: dy / L };
+      }
+      // normal (90° CCW)
+      const n1 = d1 ? { x: -d1.y, y: d1.x } : null;
+      const n2 = d2 ? { x: -d2.y, y: d2.x } : null;
+      let bx, by, scale;
+      if (!n1)      { bx = n2.x; by = n2.y; scale = 1; }
+      else if (!n2) { bx = n1.x; by = n1.y; scale = 1; }
+      else {
+        // 평균 → 정규화
+        bx = n1.x + n2.x; by = n1.y + n2.y;
+        const len = Math.hypot(bx, by);
+        if (len < 0.001) { bx = n1.x; by = n1.y; scale = 1; }
+        else {
+          bx /= len; by /= len;
+          // 코너 각도 보정 — half angle 의 cos 만큼 거리 확장 (외각이 line 외부 corner 와 정확히 일치)
+          const dot = Math.max(-1, Math.min(1, n1.x*n2.x + n1.y*n2.y));
+          const halfA = Math.acos(dot) / 2;
+          scale = 1 / Math.max(0.4, Math.cos(halfA));
+        }
+      }
+      const wp = wps[i];
+      upper.push({ x: wp.x + bx * halfCh * scale, y: wp.y + by * halfCh * scale });
+      lower.push({ x: wp.x - bx * halfCh * scale, y: wp.y - by * halfCh * scale });
     }
+    return { upper, lower };
   }
+  const { upper: U, lower: L_ } = computeOffsetPoints(waypoints, channelW / 2);
 
-  // ── 좌측 출발 캡 (channel 좌측 끝 막음) ──────────────────
-  {
-    const a = waypoints[0];
-    const dx0 = waypoints[1].x - a.x, dy0 = waypoints[1].y - a.y;
-    const angle = Math.atan2(dy0, dx0);
-    const capLen = channelW + 0.5;
+  // 각 segment — 인접 두 endpoint 잇는 cuboid (갭 없이 연결)
+  function addLineSegment(p1, p2) {
+    const cx = (p1.x + p2.x) / 2, cy = (p1.y + p2.y) / 2;
+    const dx = p2.x - p1.x, dy = p2.y - p1.y;
+    const segLen = Math.hypot(dx, dy) + 0.05;   // 미세 여유
+    const angle = Math.atan2(dy, dx);
     const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(wallThickness, capLen, wallDepth), wallMat
+      new THREE.BoxGeometry(segLen, wallThickness, wallDepth), wallMat
     );
-    mesh.position.set(a.x, a.y, 0);
+    mesh.position.set(cx, cy, 0);
     mesh.rotation.z = angle;
     scene.add(mesh);
-    const rb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(a.x, a.y, 0));
+    // 글로우 라인
+    const line = new THREE.Mesh(
+      new THREE.BoxGeometry(segLen - 0.3, 0.06, 0.06), edgeMat
+    );
+    line.position.set(cx, cy, wallDepth/2 - 0.05);
+    line.rotation.z = angle;
+    scene.add(line);
+    // collider
+    const rb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(cx, cy, 0));
     const half = angle / 2;
     world.createCollider(
-      RAPIER.ColliderDesc.cuboid(wallThickness/2, capLen/2, wallDepth/2)
+      RAPIER.ColliderDesc.cuboid(segLen/2, wallThickness/2, wallDepth/2)
         .setRotation({ x: 0, y: 0, z: Math.sin(half), w: Math.cos(half) })
-        .setRestitution(0.3).setFriction(0.3),
+        .setRestitution(0.45).setFriction(0.18),
       rb
     );
   }
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    addLineSegment(U[i], U[i+1]);
+    addLineSegment(L_[i], L_[i+1]);
+  }
+
+  // ── 좌측 출발 캡 — 위 line 끝점 U[0] ~ 아래 line 끝점 L_[0] 직접 잇기 ──
+  // polygonal offset 으로 정확한 line endpoint 이미 계산됨. 그 두 점 연결.
+  addLineSegment(U[0], L_[0]);
 
   // ── 앞뒤 z 벽 (mesh 없음, collider 만) ────────────────────
   for (const zSign of [1, -1]) {
@@ -434,18 +419,17 @@ function buildRaceTrack({ scene, world, RAPIER }) {
     );
   }
 
-  // ── 출발 게이트 (좌측 끝 channel 안에) ──────────────────
-  const startW = waypoints[0];
-  const dx0 = waypoints[1].x - startW.x, dy0 = waypoints[1].y - startW.y;
+  // ── 출발 게이트 — segment 0 의 1.5m 들어간 위치, channel 가로지름 ───
+  const dx0 = waypoints[1].x - waypoints[0].x, dy0 = waypoints[1].y - waypoints[0].y;
+  const L0 = Math.hypot(dx0, dy0);
   const segAngle0 = Math.atan2(dy0, dx0);
-  // 게이트 위치: 출발 waypoint 에서 segment 방향으로 살짝 들어간 위치
-  const gateOffset = 1.2;
-  const gateX = startW.x + Math.cos(segAngle0) * gateOffset;
-  const gateY = startW.y + Math.sin(segAngle0) * gateOffset;
+  const gateOffset = 1.8;
+  const gateX = waypoints[0].x + (dx0 / L0) * gateOffset;
+  const gateY = waypoints[0].y + (dy0 / L0) * gateOffset;
   const gate = createRaceChannelGate({
     scene, world, RAPIER,
     x: gateX, y: gateY, angle: segAngle0,
-    width: channelW + 0.3, thickness: 0.35,
+    width: channelW * 1.05, thickness: 0.35,
   });
 
   // ── 결승선 sensor (마지막 waypoint) ──────────────────────
