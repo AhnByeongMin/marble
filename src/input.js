@@ -49,19 +49,46 @@ export function expandToMarbles(participants) {
   return marbles;
 }
 
-// ── 포상 입력 UI — 가변 추가/제거 ──────────────────────────────
+// ── 포상 입력 UI — 가변 추가/제거 + 템플릿 ─────────────────────
+// 템플릿 예: 1등=월, 2등=화 ... (요일/조/번호 자동 매핑)
 export class PrizesUI {
-  constructor(container) {
+  constructor(container, templatesContainer) {
     this.container = container;
-    this.items = [{ text: '' }]; // 기본 1등 1개 (빈 값, placeholder 만)
+    this.templates = templatesContainer;
+    this.items = [{ text: '' }];   // 기본 1등 1개 (빈 값, placeholder 만)
+    this.renderTemplates();
     this.render();
   }
+
+  renderTemplates() {
+    if (!this.templates) return;
+    this.templates.innerHTML = '';
+    for (const t of TEMPLATES) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'template-btn';
+      btn.innerHTML = `<span class="t-emoji">${t.emoji}</span><span class="t-label">${t.label}</span>`;
+      btn.title = `1등 ${t.names[0]} … ${t.names.length}등 ${t.names[t.names.length-1]}`;
+      btn.addEventListener('click', () => this.applyTemplate(t));
+      this.templates.appendChild(btn);
+    }
+  }
+
+  // 템플릿 적용 — items 를 통째로 교체. 빈 한 칸이면 그것도 덮어씀, 입력된 값 있으면 확인.
+  applyTemplate(t) {
+    const hasContent = this.items.some(it => it.text && it.text.trim());
+    if (hasContent && !confirm(`기존 포상을 "${t.label}" (${t.names.length}개) 로 바꿀까요?`)) return;
+    this.items = t.names.map(n => ({ text: n }));
+    this.render();
+  }
+
   add() {
     this.items.push({ text: '' });
     this.render();
   }
   remove(idx) {
     this.items.splice(idx, 1);
+    if (this.items.length === 0) this.items.push({ text: '' });  // 최소 1개
     this.render();
   }
   getPrizes() {
@@ -95,44 +122,16 @@ export const TEMPLATES = [
   { id: 'num10',    label: '1~10번',    emoji: '🔢', names: Array.from({length: 10}, (_, i) => `${i+1}번`) },
 ];
 
-// ── 참가자 입력 UI — textarea + 템플릿 + 칩 리스트 ─────────────
+// ── 참가자 입력 UI — textarea + 칩 리스트 ─────────────────────
 export class ParticipantsUI {
-  constructor({ textarea, addName, addCount, addBtn, summary, chipsContainer, templatesContainer }) {
+  constructor({ textarea, addName, addCount, addBtn, summary, chipsContainer }) {
     this.textarea = textarea;
     this.addName = addName;
     this.addCount = addCount;
     this.summary = summary;
     this.chips = chipsContainer;
-    this.templates = templatesContainer;
     addBtn.addEventListener('click', () => this.addOne());
     this.textarea.addEventListener('input', () => this.refresh());
-    this.renderTemplates();
-    this.refresh();
-  }
-
-  renderTemplates() {
-    if (!this.templates) return;
-    this.templates.innerHTML = '';
-    for (const t of TEMPLATES) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'template-btn';
-      btn.innerHTML = `<span class="t-emoji">${t.emoji}</span><span class="t-label">${t.label}</span>`;
-      btn.title = t.names.join(', ');
-      btn.addEventListener('click', () => this.applyTemplate(t));
-      this.templates.appendChild(btn);
-    }
-  }
-
-  applyTemplate(t) {
-    // 중복 방지 — 이미 있는 이름은 추가 안 함
-    const current = parseParticipants(this.textarea.value);
-    const existing = new Set(current.map(p => p.name));
-    const toAdd = t.names.filter(n => !existing.has(n));
-    if (toAdd.length === 0) return;
-    const prev = this.textarea.value.trim();
-    const appended = toAdd.join(', ');
-    this.textarea.value = prev ? `${prev}, ${appended}` : appended;
     this.refresh();
   }
 

@@ -59,12 +59,12 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
 
     // ── 입력 UI ─────────────────────────────────────────────────
     const chipsEl = document.getElementById('chips');
-    const templatesEl = document.getElementById('templates');
+    const prizeTemplatesEl = document.getElementById('prizeTemplates');
     const participantsUI = new ParticipantsUI({
       textarea: participantsTA, addName, addCount, addBtn, summary,
-      chipsContainer: chipsEl, templatesContainer: templatesEl,
+      chipsContainer: chipsEl,
     });
-    const prizesUI = new PrizesUI(prizesContainer);
+    const prizesUI = new PrizesUI(prizesContainer, prizeTemplatesEl);
     addPrizeBtn.addEventListener('click', () => prizesUI.add());
     resultClose.addEventListener('click', () => hideResult(resultOverlay));
     // 입력은 사용자가 — placeholder 힌트만. value 미리 채우지 않음.
