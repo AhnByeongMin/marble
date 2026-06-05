@@ -141,30 +141,69 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
       eventQueue.drainCollisionEvents(() => {});
     }
 
-    // 결승선 collision events
+    // 결승선 + 범퍼 + 점핑패드 collision events
     function handleCollisionEvents() {
       eventQueue.drainCollisionEvents((h1, h2, started) => {
         if (!started) return;
+        // 결승선
         const isFinish = h1 === track.finishColliderHandle || h2 === track.finishColliderHandle;
-        if (!isFinish) return;
-        const otherHandle = h1 === track.finishColliderHandle ? h2 : h1;
-        const m = marbles.find(mm => mm.colliderHandle === otherHandle);
-        if (m && !m.finished) {
-          m.finished = true;
-          m.finishOrder = finishCount++;
-          m.finishedAt = performance.now();
-          STAGE(`결승 #${m.finishOrder + 1}: ${m.name}`);
-          lastFinisherTime = m.finishedAt;
-          // 1등 결승 — 슬로우모션 + 플래시
-          if (!firstFinisherCelebrated) {
-            firstFinisherCelebrated = true;
-            triggerSlowmo(800);
-            triggerFlash();
+        if (isFinish) {
+          const otherHandle = h1 === track.finishColliderHandle ? h2 : h1;
+          const m = marbles.find(mm => mm.colliderHandle === otherHandle);
+          if (m && !m.finished) {
+            m.finished = true;
+            m.finishOrder = finishCount++;
+            m.finishedAt = performance.now();
+            STAGE(`결승 #${m.finishOrder + 1}: ${m.name}`);
+            lastFinisherTime = m.finishedAt;
+            if (!firstFinisherCelebrated) {
+              firstFinisherCelebrated = true;
+              triggerSlowmo(800);
+              triggerFlash();
+            }
+            if (marbles.every(mm => mm.finished) && !lastFinisherCelebrated) {
+              lastFinisherCelebrated = true;
+              triggerFlash(0.7, 400);
+            }
           }
-          // 마지막 결승 — 큰 플래시
-          if (marbles.every(mm => mm.finished) && !lastFinisherCelebrated) {
-            lastFinisherCelebrated = true;
-            triggerFlash(0.7, 400);
+          return;
+        }
+        // 범퍼 — 닿은 구슬에 외향 임펄스 + 펄스 시각
+        for (const handle of [h1, h2]) {
+          if (track.bumperHandles.has(handle)) {
+            const bumper = track.bumpers.find(b => b.colliderHandle === handle);
+            const otherHandle = (h1 === handle) ? h2 : h1;
+            const m = marbles.find(mm => mm.colliderHandle === otherHandle);
+            if (bumper && m && !m.finished) {
+              const t = m.rb.translation();
+              const dx = t.x - bumper.x;
+              const dy = t.y - bumper.y;
+              const len = Math.max(0.5, Math.hypot(dx, dy));
+              const force = 10;
+              m.rb.applyImpulse({
+                x: (dx / len) * force,
+                y: (dy / len) * force * 0.7 + 1.5,  // 살짝 위로 bias
+                z: (Math.random() - 0.5) * 0.5,
+              }, true);
+              bumper.bump();
+            }
+            return;
+          }
+        }
+        // 점핑 패드 — 닿은 구슬 위로 큰 임펄스
+        for (const handle of [h1, h2]) {
+          if (track.jumpPadHandles.has(handle)) {
+            const otherHandle = (h1 === handle) ? h2 : h1;
+            const m = marbles.find(mm => mm.colliderHandle === otherHandle);
+            if (m && !m.finished) {
+              m.rb.applyImpulse({
+                x: (Math.random() - 0.5) * 3,
+                y: 9,
+                z: (Math.random() - 0.5) * 1.5,
+              }, true);
+              track.jumpPad.bump();
+            }
+            return;
           }
         }
       });
