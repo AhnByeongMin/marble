@@ -1,19 +1,16 @@
-// Marble Roulette 3D — 진입점. 입력 → 시뮬레이션 → 카메라 → 리더보드 → 결과.
+// Marble Roulette 3D — 진입점. 입력 → preview → 카운트다운 → 시뮬 → 카메라/슬로우모션 → 결과.
 
 const STAGE = (label) => console.log(`[marble] ${label}`);
 
-// ── 글로벌 에러 핸들러 — 빈 화면 대신 화면에 표시 ──────────────
+// ── 글로벌 에러 핸들러 ─────────────────────────────────────────
 const statusEl = document.getElementById('status');
 const statusTextEl = document.getElementById('statusText');
-
 function showStatus(text, isError = false) {
   statusTextEl.innerHTML = text;
   statusEl.classList.remove('hidden');
   statusEl.querySelector('.status-card').classList.toggle('error', isError);
 }
-function hideStatus() {
-  statusEl.classList.add('hidden');
-}
+function hideStatus() { statusEl.classList.add('hidden'); }
 function showError(label, err) {
   console.error(`[marble] ${label}`, err);
   const msg = err?.stack || err?.message || String(err);
@@ -22,24 +19,21 @@ function showError(label, err) {
 function escapeHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
-
 window.addEventListener('error', (e) => showError('런타임 에러', e.error || e.message));
 window.addEventListener('unhandledrejection', (e) => showError('Promise 거부', e.reason));
 
-// ── 메인 init ──────────────────────────────────────────────────
 (async function main() {
   try {
     STAGE('init 시작');
     showStatus('모듈 로딩…');
 
-    // 동적 import — 단계별 진행 표시
     const { createScene } = await import('./scene.js');
     const { initPhysics } = await import('./physics.js');
     const { buildTrack, TRACK } = await import('./track.js');
     const { createMarble } = await import('./marble.js');
     const { Leaderboard } = await import('./leaderboard.js');
     const { CameraDirector } = await import('./camera-director.js');
-    const { showResult, hideResult } = await import('./result-screen.js');
+    const { showResult, hideResult, fireConfetti } = await import('./result-screen.js');
     const { ParticipantsUI, PrizesUI } = await import('./input.js');
     STAGE('모듈 import 완료');
 
@@ -58,6 +52,10 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
     const resultOverlay = document.getElementById('resultScreen');
     const resultList = document.getElementById('resultList');
     const resultClose = document.getElementById('resultClose');
+    const countdownEl = document.getElementById('countdown');
+    const flashEl = document.getElementById('flash');
+    const panelToggle = document.getElementById('panelToggle');
+    const panel = document.getElementById('panel');
 
     // ── 입력 UI ─────────────────────────────────────────────────
     const participantsUI = new ParticipantsUI({
@@ -69,9 +67,12 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
     participantsTA.value = '안병민*3, 홍민지*3, 김부장*4';
     participantsUI.refresh();
 
+    // 모바일 패널 토글
+    panelToggle?.addEventListener('click', () => panel.classList.toggle('collapsed'));
+
     // ── Three / Rapier ──────────────────────────────────────────
     showStatus('Three.js 씬 준비…');
-    const { scene, camera, renderer } = createScene(canvas);
+    const { scene, camera, renderer, composer } = createScene(canvas);
     STAGE('scene OK');
 
     showStatus('Rapier 물리엔진 로딩 (WASM)…');
@@ -84,88 +85,178 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
 
     const cameraDirector = new CameraDirector(camera);
     const leaderboard = new Leaderboard(leaderboardEl);
-    STAGE('director + leaderboard OK');
 
-    // ── 시뮬레이션 상태 ─────────────────────────────────────────
+    // ── 시뮬 상태 ───────────────────────────────────────────────
     let marbles = [];
     let running = false;
     let finishCount = 0;
     let eventQueue = new RAPIER.EventQueue(true);
+    let runStartTime = 0;
+    let lastFinisherTime = 0;
+    let firstFinisherCelebrated = false;
+    let lastFinisherCelebrated = false;
+    let timeScale = 1.0;         // 슬로우모션
+    let timeScaleTarget = 1.0;
+    let slowmoUntil = 0;
 
     function clearMarbles() {
       for (const m of marbles) m.dispose();
       marbles = [];
       finishCount = 0;
+      firstFinisherCelebrated = false;
+      lastFinisherCelebrated = false;
+      timeScale = 1.0;
+      timeScaleTarget = 1.0;
       leaderboard.reset();
     }
 
     function spawnMarbles(defs) {
       clearMarbles();
-      // 게이트(y = topY-1.5) 위에 spawn — y = topY-0.4 ~ 더 위로 stacking
       const startY = TRACK.topY - 0.4;
-      const usableW = TRACK.width - 2;
+      const usableW = TRACK.width - 2.5;
       const cols = Math.min(defs.length, 8);
       defs.forEach((def, i) => {
         const c = i % cols;
         const r = Math.floor(i / cols);
         const x = -usableW / 2 + (usableW / Math.max(1, cols - 1)) * c + (Math.random() - 0.5) * 0.3;
-        const y = startY + r * 1.4 + (Math.random() - 0.5) * 0.2;
+        const y = startY + r * 1.2 + (Math.random() - 0.5) * 0.15;
         const z = (Math.random() - 0.5) * (TRACK.depth - 0.6);
         const m = createMarble({ scene, world, RAPIER, def, x, y, z });
         marbles.push(m);
       });
-      STAGE(`구슬 ${defs.length}개 spawn (게이트 위 대기)`);
+      STAGE(`구슬 ${defs.length}개 spawn`);
     }
 
-    // 입력 변경 시 자동 preview — 게이트 위에 구슬 미리 보여줌
     function previewMarbles() {
       const defs = participantsUI.getMarbles();
       if (defs.length === 0) return;
       spawnMarbles(defs);
       track.gate.reset();
-      // 첫 step 한 번만 — 게이트 위에 안착 (1 step 안에 떨어지지 않음, 게이트가 받침)
+      // 안착시킴 — 30 step 돌려 게이트 위에서 정착
       for (let i = 0; i < 30; i++) {
         world.step(eventQueue);
         track.tick(world.timestep);
       }
       for (const m of marbles) m.sync();
-      eventQueue.drainCollisionEvents(() => {});  // 게이트 안착 중 발생한 collision 무시
+      eventQueue.drainCollisionEvents(() => {});
     }
 
+    // 결승선 collision events
     function handleCollisionEvents() {
       eventQueue.drainCollisionEvents((h1, h2, started) => {
         if (!started) return;
-        const isFinish1 = h1 === track.finishColliderHandle;
-        const isFinish2 = h2 === track.finishColliderHandle;
-        if (!isFinish1 && !isFinish2) return;
-        const otherHandle = isFinish1 ? h2 : h1;
+        const isFinish = h1 === track.finishColliderHandle || h2 === track.finishColliderHandle;
+        if (!isFinish) return;
+        const otherHandle = h1 === track.finishColliderHandle ? h2 : h1;
         const m = marbles.find(mm => mm.colliderHandle === otherHandle);
         if (m && !m.finished) {
           m.finished = true;
           m.finishOrder = finishCount++;
           m.finishedAt = performance.now();
           STAGE(`결승 #${m.finishOrder + 1}: ${m.name}`);
+          lastFinisherTime = m.finishedAt;
+          // 1등 결승 — 슬로우모션 + 플래시
+          if (!firstFinisherCelebrated) {
+            firstFinisherCelebrated = true;
+            triggerSlowmo(800);
+            triggerFlash();
+          }
+          // 마지막 결승 — 큰 플래시
+          if (marbles.every(mm => mm.finished) && !lastFinisherCelebrated) {
+            lastFinisherCelebrated = true;
+            triggerFlash(0.7, 400);
+          }
         }
       });
     }
 
-    let runStartTime = 0;
-    function startRun() {
-      // 구슬이 게이트 위에 없으면 spawn 부터
+    // 슬로우모션 / 플래시 트리거
+    function triggerSlowmo(durationMs = 600) {
+      timeScaleTarget = 0.25;
+      slowmoUntil = performance.now() + durationMs;
+    }
+    function triggerFlash(intensity = 0.4, durationMs = 250) {
+      flashEl.style.transition = 'none';
+      flashEl.style.opacity = String(intensity);
+      // double rAF 로 css transition 안전하게
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        flashEl.style.transition = `opacity ${durationMs}ms ease-out`;
+        flashEl.style.opacity = '0';
+      }));
+    }
+
+    // ── stuck 감지 + nudge ─────────────────────────────────────
+    // 매 90프레임 (~1.5초) 마다 결승 안 한 구슬의 y 변화 측정. 변화 작으면 random impulse.
+    let nudgeFrameCount = 0;
+    const lastYSnapshot = new Map();   // marble.id → y
+    function nudgeStuckMarbles() {
+      const newSnapshot = new Map();
+      for (const m of marbles) {
+        if (m.finished) continue;
+        const y = m.rb.translation().y;
+        newSnapshot.set(m.id, y);
+        const prev = lastYSnapshot.get(m.id);
+        if (prev !== undefined) {
+          const dy = prev - y;  // 떨어지는 양 (양수가 정상)
+          if (dy < 0.4) {
+            // stuck — random horizontal impulse + 약간 위로
+            const impulse = {
+              x: (Math.random() - 0.5) * 2.5,
+              y: 0.3,
+              z: (Math.random() - 0.5) * 1.2,
+            };
+            m.rb.applyImpulse(impulse, true);
+            m.rb.applyTorqueImpulse({
+              x: (Math.random() - 0.5) * 0.4,
+              y: (Math.random() - 0.5) * 0.4,
+              z: (Math.random() - 0.5) * 0.4,
+            }, true);
+          }
+        }
+      }
+      lastYSnapshot.clear();
+      for (const [k, v] of newSnapshot) lastYSnapshot.set(k, v);
+    }
+
+    // ── 카운트다운 ──────────────────────────────────────────────
+    async function countdown() {
+      const steps = ['3', '2', '1', '출발!'];
+      for (const s of steps) {
+        countdownEl.textContent = s;
+        countdownEl.classList.remove('hidden');
+        countdownEl.classList.remove('pop');
+        // double rAF — pop class 재트리거
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        countdownEl.classList.add('pop');
+        await new Promise(r => setTimeout(r, 700));
+      }
+      countdownEl.classList.add('hidden');
+    }
+
+    // ── 시작 / 리셋 ─────────────────────────────────────────────
+    async function startRun() {
       if (marbles.length === 0) {
         const defs = participantsUI.getMarbles();
-        if (defs.length === 0) {
-          alert('참가자를 1명 이상 입력해주세요.');
-          return;
-        }
+        if (defs.length === 0) { alert('참가자를 1명 이상 입력해주세요.'); return; }
         spawnMarbles(defs);
         track.gate.reset();
       }
       hideResult(resultOverlay);
-      track.gate.open();   // 게이트 슬라이드 — 구슬 떨어지기 시작
+      startBtn.disabled = true;
+      resetBtn.disabled = true;
+      // 모바일 패널 자동 닫기 — 화면 잘 보이게
+      panel.classList.add('collapsed');
+
+      await countdown();
+
+      track.gate.open();
       running = true;
       runStartTime = performance.now();
+      nudgeFrameCount = 0;
+      lastYSnapshot.clear();
       STAGE('▶ 출발 — 게이트 열림');
+      startBtn.disabled = false;
+      resetBtn.disabled = false;
     }
 
     startBtn.addEventListener('click', startRun);
@@ -174,23 +265,14 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
       running = false;
       track.gate.reset();
       hideResult(resultOverlay);
-      // 입력 기반 preview 다시
       previewMarbles();
     });
 
-    // 입력 textarea 변경 시 preview 새로 — 페이지 진입 시 1회 자동 preview
     let previewTimer = null;
-    function schedulePreview() {
+    participantsTA.addEventListener('input', () => {
       clearTimeout(previewTimer);
-      previewTimer = setTimeout(() => {
-        if (!running) previewMarbles();
-      }, 300);
-    }
-    participantsTA.addEventListener('input', schedulePreview);
-
-    // 페이지 진입 첫 preview
-    hideStatus();
-    previewMarbles();
+      previewTimer = setTimeout(() => { if (!running) previewMarbles(); }, 300);
+    });
 
     // ── 메인 루프 ───────────────────────────────────────────────
     let lastT = performance.now();
@@ -202,12 +284,23 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
       const dt = Math.min(0.05, (now - lastT) / 1000);
       lastT = now;
 
+      // 슬로우모션 timeScale 보간
+      if (now > slowmoUntil) timeScaleTarget = 1.0;
+      timeScale += (timeScaleTarget - timeScale) * Math.min(1, dt * 6);
+
       if (running) {
-        world.step(eventQueue);
-        handleCollisionEvents();
-        track.tick(world.timestep);
-        for (const m of marbles) m.sync();
-        // 안전망 — 60초 후 결승 못한 구슬 강제 종료 (트랙 어딘가에 끼인 경우)
+        // 슬로우모션은 step 횟수 줄임 (간단 구현 — substeps 조절 안 함)
+        // timeScale > 0.5 이면 매 frame step, 0.5 이하면 절반만 step
+        const shouldStep = (timeScale >= 0.5) || (Math.random() < timeScale * 2);
+        if (shouldStep) {
+          world.step(eventQueue);
+          handleCollisionEvents();
+          track.tick(world.timestep);
+          for (const m of marbles) m.sync();
+          // stuck nudge — 90 step 마다
+          if (++nudgeFrameCount % 90 === 0) nudgeStuckMarbles();
+        }
+        // 안전망 — 60초 후 끼인 구슬 강제 종료
         const elapsed = (now - runStartTime) / 1000;
         if (elapsed > 60) {
           for (const m of marbles) {
@@ -221,7 +314,6 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
       }
 
       cameraDirector.update(marbles, dt);
-
       if (marbles.length > 0) leaderboard.update(marbles);
 
       if (running && marbles.length > 0 && marbles.every(m => m.finished) && !resultShown) {
@@ -232,15 +324,19 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
             overlayEl: resultOverlay, listEl: resultList,
             marbles, prizes: prizesUI.getPrizes(),
           });
+          fireConfetti();
           running = false;
-        }, 1200);
+        }, 1400);
       }
       if (!running || marbles.length === 0) resultShown = false;
 
-      renderer.render(scene, camera);
+      if (composer) composer.render();
+      else renderer.render(scene, camera);
     }
 
     STAGE('루프 시작');
+    hideStatus();
+    previewMarbles();
     loop();
   } catch (err) {
     showError('초기화 실패', err);

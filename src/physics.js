@@ -4,8 +4,8 @@ import RAPIER from '@dimforge/rapier3d-compat';
 
 export async function initPhysics() {
   await RAPIER.init();
-  const gravity = { x: 0, y: -20, z: 0 };
+  // gravity 강하게 — 끼임 줄이고 떨어지는 속도감 ↑
+  const gravity = { x: 0, y: -28, z: 0 };
   const world = new RAPIER.World(gravity);
-  // timestep / iterations 은 Rapier 기본값 사용 (1/60, default solver).
   return { RAPIER, world };
 }

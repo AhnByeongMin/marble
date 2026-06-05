@@ -3,8 +3,8 @@
 
 import * as THREE from 'three';
 
-const TRACK_WIDTH = 12;       // x 폭
-const TRACK_DEPTH = 1.6;      // z 깊이 (구슬이 z 축 쏠리는 거 방지)
+const TRACK_WIDTH = 14;       // x 폭 — 끼임 줄이려 약간 넓힘
+const TRACK_DEPTH = 1.8;      // z 깊이
 const TRACK_TOP_Y = 30;       // 출발점
 const TRACK_BOTTOM_Y = -30;   // 결승선 y
 const FINISH_Y = -28;         // sensor
@@ -20,19 +20,19 @@ export const TRACK = {
 // 트랙 구조 빌드 — Three meshes + Rapier colliders 동시에
 export function buildTrack({ scene, world, RAPIER }) {
   const wallMat = new THREE.MeshStandardMaterial({
-    color: 0x1e293b, roughness: 0.6, metalness: 0.2,
+    color: 0x171a2b, roughness: 0.55, metalness: 0.35,
   });
   const pinMat = new THREE.MeshStandardMaterial({
-    color: 0x6366f1, roughness: 0.4, metalness: 0.6,
-    emissive: 0x312e81, emissiveIntensity: 0.3,
+    color: 0x8b5cf6, roughness: 0.3, metalness: 0.7,
+    emissive: 0x6366f1, emissiveIntensity: 0.8,
   });
   const windmillMat = new THREE.MeshStandardMaterial({
-    color: 0xf59e0b, roughness: 0.5, metalness: 0.3,
-    emissive: 0x78350f, emissiveIntensity: 0.2,
+    color: 0xfbbf24, roughness: 0.4, metalness: 0.5,
+    emissive: 0xf59e0b, emissiveIntensity: 0.6,
   });
   const finishMat = new THREE.MeshStandardMaterial({
-    color: 0x22c55e, roughness: 0.3, metalness: 0.5,
-    emissive: 0x14532d, emissiveIntensity: 0.6, transparent: true, opacity: 0.4,
+    color: 0x22c55e, roughness: 0.2, metalness: 0.6,
+    emissive: 0x10b981, emissiveIntensity: 1.5, transparent: true, opacity: 0.7,
   });
 
   // ── 좌우 벽 ────────────────────────────────────────────
@@ -73,12 +73,12 @@ export function buildTrack({ scene, world, RAPIER }) {
   const pinRadius = 0.25;
   const pinHeight = TRACK_DEPTH;
   const pinGeom = new THREE.CylinderGeometry(pinRadius, pinRadius, pinHeight, 12);
-  // 풍차 영역(y ≈ 0) + 결승 직전 영역은 비워둠. cols 좀 적게 — 구슬이 끼이지 않게.
+  // 풍차 영역(y ≈ 0) + 결승 직전 영역 비움. 핀 사이 간격 충분히 (구슬 지름 0.7, 간격 2.4+).
   const pinZones = [
-    { yMin: 20, yMax: 27, rows: 3, cols: 5, offset: true },
-    { yMin: 8, yMax: 15, rows: 3, cols: 5, offset: false },
-    { yMin: -8, yMax: -3, rows: 2, cols: 5, offset: true },
-    { yMin: -22, yMax: -14, rows: 3, cols: 5, offset: false },
+    { yMin: 20, yMax: 26, rows: 2, cols: 5, offset: true },
+    { yMin: 9, yMax: 15, rows: 2, cols: 5, offset: false },
+    { yMin: -7, yMax: -3, rows: 2, cols: 5, offset: true },
+    { yMin: -20, yMax: -14, rows: 2, cols: 5, offset: false },
   ];
   for (const zone of pinZones) {
     const stepY = (zone.yMax - zone.yMin) / zone.rows;
@@ -113,15 +113,29 @@ export function buildTrack({ scene, world, RAPIER }) {
   // ── 회전 풍차 (y ≈ 0) ────────────────────────────────
   const windmill = createWindmill({ scene, world, RAPIER, y: 0, mat: windmillMat });
 
-  // ── 결승선 (sensor) ──────────────────────────────────
-  const finishGeom = new THREE.BoxGeometry(TRACK_WIDTH - 1, 0.3, TRACK_DEPTH);
+  // ── 결승선 (sensor + 화려한 glow) ────────────────────
+  const finishGeom = new THREE.BoxGeometry(TRACK_WIDTH - 1, 0.4, TRACK_DEPTH);
   const finishMesh = new THREE.Mesh(finishGeom, finishMat);
   finishMesh.position.set(0, FINISH_Y, 0);
   scene.add(finishMesh);
-  // 결승선 발광 효과
-  const finishGlow = new THREE.PointLight(0x22c55e, 2, 8);
+  // 결승선 발광 — 더 강하게
+  const finishGlow = new THREE.PointLight(0x22c55e, 8, 14);
   finishGlow.position.set(0, FINISH_Y, 0);
   scene.add(finishGlow);
+  // 결승선 위 빛나는 라인 (시인성)
+  const finishLineMat = new THREE.MeshBasicMaterial({ color: 0x86efac });
+  const finishLineMesh = new THREE.Mesh(
+    new THREE.BoxGeometry(TRACK_WIDTH - 0.6, 0.08, TRACK_DEPTH + 0.2),
+    finishLineMat
+  );
+  finishLineMesh.position.set(0, FINISH_Y + 0.3, 0);
+  scene.add(finishLineMesh);
+  // 결승선 라인 부드러운 pulse — emissiveIntensity 의 sin 진동
+  let pulsePhase = 0;
+  const pulseTick = (dt) => {
+    pulsePhase += dt * 2.5;
+    finishMat.emissiveIntensity = 1.2 + Math.sin(pulsePhase) * 0.7;
+  };
   // sensor — 통과 시 이벤트
   const finishRb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, FINISH_Y, 0));
   const finishCollider = world.createCollider(
@@ -152,6 +166,7 @@ export function buildTrack({ scene, world, RAPIER }) {
     tick(dt) {
       windmill.tick(dt);
       gate.tick(dt);
+      pulseTick(dt);
     },
   };
 }

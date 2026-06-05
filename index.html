@@ -2,8 +2,9 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-    <meta name="theme-color" content="#0a0a0f" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#05060c" />
+    <meta name="description" content="3D 마블 룰렛으로 추첨하세요 — 참가자 입력하고 출발 누르면 구슬이 떨어지며 1~N등을 결정합니다." />
     <title>Marble Roulette · haru-hub</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
@@ -11,55 +12,80 @@
     <!-- 3D 렌더 캔버스 -->
     <canvas id="stage"></canvas>
 
-    <!-- 로딩 / 에러 오버레이 -->
+    <!-- 화면 플래시 (1등 결승 / 마지막 결승) -->
+    <div id="flash" class="flash"></div>
+
+    <!-- 카운트다운 -->
+    <div id="countdown" class="countdown hidden"></div>
+
+    <!-- 모바일 패널 토글 버튼 -->
+    <button id="panelToggle" type="button" class="panel-toggle" aria-label="패널 열기/닫기">
+      <span class="icon"></span>
+    </button>
+
+    <!-- 좌측 입력 패널 -->
+    <aside id="panel" class="panel">
+      <header class="panel-head">
+        <div class="brand">
+          <span class="emoji">🎱</span>
+          <h1>Marble Roulette</h1>
+        </div>
+        <p class="subtitle">구슬 추첨 · 50명까지</p>
+      </header>
+
+      <section class="panel-section">
+        <label class="section-label">
+          <span class="title">👥 참가자</span>
+          <span class="hint"><code>이름*N</code> 또는 <code>이름</code>. 쉼표·줄바꿈 모두 구분.</span>
+        </label>
+        <textarea id="participants" rows="4" placeholder="안병민*3, 홍민지*3&#10;김부장 5"></textarea>
+        <div class="row">
+          <input id="addName" placeholder="이름 추가" />
+          <input id="addCount" type="number" min="1" max="50" value="1" />
+          <button id="addBtn" type="button" class="ghost">+</button>
+        </div>
+        <div class="summary" id="participantsSummary">참가자 0명</div>
+      </section>
+
+      <section class="panel-section">
+        <label class="section-label">
+          <span class="title">🏆 포상 (등수별)</span>
+          <span class="hint">결과에서 1등부터 차례로 매칭.</span>
+        </label>
+        <div id="prizes" class="prizes"></div>
+        <button id="addPrizeBtn" type="button" class="ghost block">+ 등수 추가</button>
+      </section>
+
+      <div class="control-row">
+        <button id="startBtn" type="button" class="btn-primary">▶ 출발</button>
+        <button id="resetBtn" type="button" class="btn-ghost">↺</button>
+      </div>
+    </aside>
+
+    <!-- 우측 상단 리더보드 -->
+    <div class="leaderboard-wrap">
+      <header class="lb-head">
+        <span class="lb-title">실시간 순위</span>
+        <span class="lb-spark"></span>
+      </header>
+      <ol id="leaderboard" class="leaderboard"></ol>
+    </div>
+
+    <!-- 결과 오버레이 -->
+    <div id="resultScreen" class="result hidden">
+      <div class="result-card">
+        <div class="result-glow"></div>
+        <h2>🏆 추첨 결과</h2>
+        <ol id="resultList" class="result-list"></ol>
+        <button id="resultClose" type="button" class="btn-primary">닫기</button>
+      </div>
+    </div>
+
+    <!-- 로딩 / 에러 -->
     <div id="status" class="status">
       <div class="status-card">
         <div id="statusSpinner" class="spinner"></div>
         <div id="statusText">물리엔진 로딩…</div>
-      </div>
-    </div>
-
-    <!-- 좌측: 입력 패널 -->
-    <aside id="panel">
-      <header class="panel-head">
-        <h1>🎱 Marble Roulette</h1>
-        <p class="hint">구슬 추첨 — 50개까지</p>
-      </header>
-
-      <section class="panel-section">
-        <label>참가자
-          <span class="hint">한 줄당 <code>이름*N</code> 또는 <code>이름,N</code>. 쉼표·줄바꿈 모두 OK.</span>
-        </label>
-        <textarea id="participants" rows="5" placeholder="안병민*3, 홍민지*3&#10;김부장*5"></textarea>
-        <div class="row">
-          <input id="addName" placeholder="이름" />
-          <input id="addCount" type="number" min="1" max="50" value="1" />
-          <button id="addBtn" type="button">+ 추가</button>
-        </div>
-        <div class="hint" id="participantsSummary">참가자 0명</div>
-      </section>
-
-      <section class="panel-section">
-        <label>포상 등수</label>
-        <div id="prizes"></div>
-        <button id="addPrizeBtn" type="button" class="secondary">+ 등수 추가</button>
-      </section>
-
-      <div class="row sticky">
-        <button id="startBtn" type="button" class="primary">▶ 시작</button>
-        <button id="resetBtn" type="button" class="secondary">↺ 리셋</button>
-      </div>
-    </aside>
-
-    <!-- 우측 상단: 리더보드 -->
-    <ol id="leaderboard" class="leaderboard"></ol>
-
-    <!-- 결과 오버레이 (숨김 시작) -->
-    <div id="resultScreen" class="result hidden">
-      <div class="result-card">
-        <h2>🏆 결과</h2>
-        <ol id="resultList"></ol>
-        <button id="resultClose" type="button" class="primary">닫기</button>
       </div>
     </div>
 
