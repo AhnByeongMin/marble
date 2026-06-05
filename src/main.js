@@ -202,14 +202,14 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
           y = 2 + (Math.random() - 0.5) * 0.4;
           z = -zRange/2 + (zRange / Math.max(1, cols - 1)) * c + (Math.random() - 0.5) * 0.2;
         } else {
-          // 수직 — 게이트 위 격자
+          // 수직 — 게이트 위 격자. 좁으면 cluster 발생 → 충분히 넓게.
           const startY = spec.topY - 0.4;
-          const usableW = Math.min(6, spec.width - 4);
-          const cols = Math.min(shuffled.length, 6);
+          const usableW = Math.min(8, spec.width - 3);   // 6 → 8 (cluster 방지)
+          const cols = Math.min(shuffled.length, 8);
           const c = i % cols;
           const r = Math.floor(i / cols);
-          x = -usableW / 2 + (usableW / Math.max(1, cols - 1)) * c + (Math.random() - 0.5) * 0.5;
-          y = startY + r * 1.0 + (Math.random() - 0.5) * 0.2;
+          x = -usableW / 2 + (usableW / Math.max(1, cols - 1)) * c + (Math.random() - 0.5) * 0.7;
+          y = startY + r * 1.1 + (Math.random() - 0.5) * 0.25;
           z = (Math.random() - 0.5) * (spec.depth - 0.6);
         }
         const m = createMarble({ scene, world, RAPIER, def, x, y, z });
@@ -346,30 +346,39 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
     // ── stuck 감지 + nudge (점진적 강화: impulse → 큰 impulse → 텔레포트) ─
     // 매 30프레임 (~0.5초) 마다 결승 안 한 구슬 y 변화 측정.
     let nudgeFrameCount = 0;
-    const lastYSnapshot = new Map();    // marble.id → y
+    const lastSnapshot = new Map();     // marble.id → [x, y]
     const stuckStreak = new Map();      // marble.id → 연속 stuck 횟수
     function nudgeStuckMarbles() {
       const newSnapshot = new Map();
       for (const m of marbles) {
         if (m.finished) continue;
-        const y = m.rb.translation().y;
-        newSnapshot.set(m.id, y);
-        const prev = lastYSnapshot.get(m.id);
+        const tr = m.rb.translation();
+        const x = tr.x, y = tr.y;
+        newSnapshot.set(m.id, [x, y]);
+        const prev = lastSnapshot.get(m.id);
         if (prev === undefined) continue;
-        const dy = prev - y;  // 0.5초 동안 떨어진 양 (양수가 정상)
-        if (dy < 0.3) {
+        // 진행 방향: vertical 은 y 감소(아래로), race 는 x 증가(우측으로)
+        const progress = spec.type === 'race' ? (x - prev[0]) : (prev[1] - y);
+        if (progress < 0.3) {
           // stuck — streak ++
           const streak = (stuckStreak.get(m.id) || 0) + 1;
           stuckStreak.set(m.id, streak);
-          if (streak >= 3) {
-            // 3회 누적 stuck — 텔레포트 위로 + 강한 impulse 리셋
-            const newY = Math.min(y + 4, TRACK.topY - 2);
-            m.rb.setTranslation({
-              x: (Math.random() - 0.5) * (TRACK.width - 3),
-              y: newY,
-              z: (Math.random() - 0.5) * (TRACK.depth - 0.5),
-            }, true);
-            m.rb.setLinvel({ x: (Math.random()-0.5)*3, y: -2, z: (Math.random()-0.5)*1.5 }, true);
+          if (streak >= 2) {   // 3 → 2 (1초 stuck 후 텔레포트, 더 적극적)
+            // 3회 누적 stuck — 모드별 안전한 위치로 텔레포트
+            let nx, ny, nz, vx, vy, vz;
+            if (spec.type === 'race') {
+              nx = Math.min(x + 3, spec.finishX - 4);
+              ny = 1 + Math.random() * 2;
+              nz = (Math.random() - 0.5) * (spec.depth - 0.5);
+              vx = 6 + Math.random() * 2;  vy = 0;  vz = (Math.random()-0.5)*1.5;
+            } else {
+              nx = (Math.random() - 0.5) * (spec.width - 3);
+              ny = Math.min(y + 4, spec.topY - 2);
+              nz = (Math.random() - 0.5) * (spec.depth - 0.5);
+              vx = (Math.random()-0.5)*3;  vy = -2;  vz = (Math.random()-0.5)*1.5;
+            }
+            m.rb.setTranslation({ x: nx, y: ny, z: nz }, true);
+            m.rb.setLinvel({ x: vx, y: vy, z: vz }, true);
             m.rb.setAngvel({ x: 0, y: 0, z: 0 }, true);
             stuckStreak.set(m.id, 0);
             STAGE(`텔레포트: ${m.name} (3회 stuck)`);
@@ -391,8 +400,8 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
           stuckStreak.set(m.id, 0);
         }
       }
-      lastYSnapshot.clear();
-      for (const [k, v] of newSnapshot) lastYSnapshot.set(k, v);
+      lastSnapshot.clear();
+      for (const [k, v] of newSnapshot) lastSnapshot.set(k, v);
     }
 
     // ── 카운트다운 ──────────────────────────────────────────────
@@ -435,7 +444,7 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
       running = true;
       runStartTime = performance.now();
       nudgeFrameCount = 0;
-      lastYSnapshot.clear();
+      lastSnapshot.clear();
       STAGE('▶ 출발 — 게이트 열림 + 카오스 임펄스');
       startBtn.disabled = false;
       resetBtn.disabled = false;

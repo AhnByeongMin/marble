@@ -19,8 +19,10 @@ export const MODES = {
     description: '좌→우 가로 코스 — 점프대/장애물 통과',
     trackType: 'race',
     cameraMode: 'side-follow',
-    gravity: { x: 0, y: -10, z: 0 },
-    startImpulse: { x: 8, y: 0.5, z: 0.4 },     // X+ 방향 초기 추진
+    // X+ 방향 지속 가속 — 트랙 경사로 + gravity X 둘 다.
+    // gravity Y 도 강하게 (구슬이 바닥에 빨리 안착 → 굴러감)
+    gravity: { x: 5, y: -16, z: 0 },
+    startImpulse: { x: 6, y: 0.4, z: 0.3 },
     reverseRanking: false,
   },
   REVERSE: {

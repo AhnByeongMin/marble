@@ -306,27 +306,32 @@ function buildRaceTrack({ scene, world, RAPIER }) {
   });
   const finishLineMat = new THREE.MeshBasicMaterial({ color: 0x86efac });
 
-  // ── 바닥 + 천장 + 앞뒤 z 벽 ──────────────────────────────
-  // 바닥 — 살짝 굴곡 X+ 방향 약하게 경사 (Y 감소)
-  function addFloor(cx, cy, len, h = 0.6) {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(len, h, D), floorMat);
-    mesh.position.set(cx, cy, 0);
+  // ── 경사로 바닥 (시작 → 결승 Y 점진 감소) — 자연 X+ 굴러감 ──
+  // 시작 Y=-3, 결승 Y=-9 (6m 떨어짐). 5 segment 의 평균 경사 ≈ atan(6/56) ≈ 6°.
+  // 각 segment 를 그 경사로 회전된 cuboid 로 — 모서리 없이 매끄러운 경사.
+  const seg = 5;
+  const startFloorY = -3;
+  const endFloorY = -9;
+  for (let i = 0; i < seg; i++) {
+    const segLen = (L + 1) / seg;
+    const x = startX + segLen * (i + 0.5);
+    const y = startFloorY + (endFloorY - startFloorY) * (i + 0.5) / seg;
+    // 경사 각도 — 다음 segment 와 연결되는 방향
+    const dy = (endFloorY - startFloorY) / seg;
+    const angle = Math.atan2(dy, segLen);   // 음수 (X+ 방향 아래로)
+    const h = 0.6;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(segLen, h, D), floorMat);
+    mesh.position.set(x, y, 0);
+    mesh.rotation.z = angle;
     scene.add(mesh);
-    const rb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(cx, cy, 0));
+    const rb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(x, y, 0));
+    const half = angle / 2;
     world.createCollider(
-      RAPIER.ColliderDesc.cuboid(len/2, h/2, D/2)
-        .setRestitution(0.3).setFriction(0.4),
+      RAPIER.ColliderDesc.cuboid(segLen/2, h/2, D/2)
+        .setRotation({ x: 0, y: 0, z: Math.sin(half), w: Math.cos(half) })
+        .setRestitution(0.3).setFriction(0.35),
       rb
     );
-  }
-  // 굴곡 경사 — 5 segment, 미세 sin 패턴
-  const seg = 5;
-  for (let i = 0; i < seg; i++) {
-    const cx = startX - L/2 + (L / seg) * (i + 0.5) + L/2 + startX;  // -28~+28 중심
-    // 정확한 위치 계산 — startX 부터 끝까지 등분
-    const x = startX + (L / seg) * (i + 0.5);
-    const y = floorY - Math.sin(i / seg * Math.PI) * 0.6;  // 가운데 살짝 들어감
-    addFloor(x, y, L / seg + 0.5);
   }
   // 천장
   {
@@ -364,20 +369,25 @@ function buildRaceTrack({ scene, world, RAPIER }) {
   const gateY = (floorY + ceilY)/2;
   const gate = createRaceGate({ scene, world, RAPIER, x: startX + 1, y: gateY, h: H - 0.4 });
 
-  // ── 장애물 ─────────────────────────────────────────────
-  const bumpers = [];
-  // 범퍼 — 트랙 가운데 박힌 형태 (Y 가운데, 다양한 X)
-  for (const [bx, by] of [[-15, -4], [-5, -2], [5, -4], [15, -2]]) {
-    bumpers.push(createBumperRace({ scene, world, RAPIER, x: bx, y: by, mat: bumperMat }));
+  // ── 장애물 — 트랙 경사 위쪽 영역에 배치 (X+ 진행 막지 않게) ─
+  // 트랙 바닥 곡선: startFloorY=-3 → endFloorY=-9.  각 X 위치의 바닥 Y 계산
+  function floorYAt(x) {
+    const t = (x - startX) / L;
+    return startFloorY + (endFloorY - startFloorY) * t;
   }
-  // 점프대 — X 진행 도중 위로 튐
-  const jumpPad = createJumpPadRace({ scene, world, RAPIER, x: -10, y: floorY + 0.6, mat: jumpPadMat });
-  const jumpPad2 = createJumpPadRace({ scene, world, RAPIER, x: 10, y: floorY + 0.6, mat: jumpPadMat });
+  const bumpers = [];
+  // 범퍼 — 바닥 살짝 위 (Y = floorY + 1) — 구슬이 굴러가다 부딪힘
+  for (const bx of [-18, -8, 4, 16]) {
+    bumpers.push(createBumperRace({ scene, world, RAPIER, x: bx, y: floorYAt(bx) + 1.2, mat: bumperMat }));
+  }
+  // 점프대 — 바닥에 묻혀 위 만 노출
+  const jumpPad = createJumpPadRace({ scene, world, RAPIER, x: -12, y: floorYAt(-12) + 0.6, mat: jumpPadMat });
+  const jumpPad2 = createJumpPadRace({ scene, world, RAPIER, x: 8, y: floorYAt(8) + 0.6, mat: jumpPadMat });
 
-  // 회전 톱니 — X 진행 방해 (가운데 큰 톱니)
-  const saw1 = createSaw({ scene, world, RAPIER, x: -20, y: 1, mat: sawMat, dir: 1 });
-  const saw2 = createSaw({ scene, world, RAPIER, x: 0, y: 1, mat: sawMat, dir: -1 });
-  const saw3 = createSaw({ scene, world, RAPIER, x: 20, y: 1, mat: sawMat, dir: 1 });
+  // 회전 톱니 — 천장에서 매달림 (Y 높음) → 빠른 구슬만 닿음, 느린 구슬 그 아래로 통과
+  const saw1 = createSaw({ scene, world, RAPIER, x: -22, y: ceilY - 2.5, mat: sawMat, dir: 1 });
+  const saw2 = createSaw({ scene, world, RAPIER, x:   0, y: ceilY - 2.5, mat: sawMat, dir: -1 });
+  const saw3 = createSaw({ scene, world, RAPIER, x:  22, y: ceilY - 2.5, mat: sawMat, dir: 1 });
 
   // ── 결승선 sensor (우측 끝) ───────────────────────────────
   const finishGlow = new THREE.PointLight(0x22c55e, 12, 18);
