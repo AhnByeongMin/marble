@@ -93,6 +93,32 @@ export function buildTrack({ scene, world, RAPIER }) {
     scene.add(line);
   }
 
+  // ── 사이드 데플렉터 — 벽 따라 직선 낙하 방지 (지그재그) ────
+  // 좌우 alternating 비스듬한 panel. 구슬이 벽 가까이 떨어지면 안쪽으로 튕김.
+  // 각도 0.5 rad (~28°), 길이 2.6, 위치 = 핀 zone 사이 빈 영역.
+  const deflectorMat = new THREE.MeshStandardMaterial({
+    color: 0x312e81, roughness: 0.5, metalness: 0.5,
+    emissive: 0x6366f1, emissiveIntensity: 0.4,
+  });
+  // [side, y] — side: -1 좌측, +1 우측
+  const deflectors = [
+    [-1, 19],   // 보라 핀 아래
+    [ 1, 13],   // 범퍼 위 (벽쪽 보강)
+    [-1,  4],   // 시안 핀과 점핑패드 사이 (좌)
+    [ 1, -2],   // 점핑패드와 스피너 사이 (우)
+    [-1, -8],   // 스피너 좌측 외곽
+    [ 1, -8],   // 스피너 우측 외곽
+  ];
+  for (const [side, y] of deflectors) {
+    buildDeflector({
+      scene, world, RAPIER, mat: deflectorMat,
+      side, y,
+      length: 2.6, thickness: 0.35,
+      angleRad: 0.5,
+      wallX: wallX,
+    });
+  }
+
   // ── 핀 격자 — 끼임 방지 위해 모두 stagger, 안쪽 polygon ─────
   // 설계 원칙:
   //   1) pinHeight < TRACK_DEPTH (z 벽에 박히지 않게)
@@ -419,6 +445,54 @@ function createJumpPad({ scene, world, RAPIER, x, y, mat }) {
       }
     },
   };
+}
+
+// ─────────────────────────────────────────────────────────────
+// 데플렉터 — 벽 안쪽에 비스듬한 짧은 panel. 구슬을 안쪽으로 튕김.
+// side: -1 좌, +1 우. 좌측 panel 은 ↘ 기울기 (위 끝이 벽쪽), 우측 panel 은 ↙.
+// ─────────────────────────────────────────────────────────────
+function buildDeflector({ scene, world, RAPIER, mat, side, y, length, thickness, angleRad, wallX }) {
+  // 회전 후 panel 의 수평 투영 = length * sin(angle). 그 중심 x:
+  // panel 위쪽 끝이 벽 안쪽 (wallX - 0.3) 가까이 오도록 중심 x 계산.
+  const dx = (length / 2) * Math.sin(angleRad);  // 회전 후 x 반쪽
+  const innerWallX = wallX - 0.3;                 // 벽 안쪽 면
+  // 위쪽 끝 x = side * (innerWallX - 0.1) 가 되도록 중심 x:
+  //   좌측(side=-1) panel: 위쪽 끝 x = center.x + dx (-측 panel은 +rotation)
+  //   center.x = -innerWallX - dx + 0.1
+  // 단순화: 중심 x 를 벽에서 panel 절반 + 약간 안쪽으로
+  const cx = side * (innerWallX - dx - 0.1);
+  // rotation z — 좌측 panel: +angleRad (좌상→우하), 우측 panel: -angleRad (우상→좌하)
+  // → 모두 안쪽으로 기우는 방향
+  const rotZ = -side * angleRad;
+
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(thickness, length, TRACK_DEPTH * 0.85),
+    mat
+  );
+  mesh.position.set(cx, y, 0);
+  mesh.rotation.z = rotZ;
+  scene.add(mesh);
+  // 글로우 라인 (앞쪽 면) — 시각
+  const lineMat = new THREE.MeshBasicMaterial({ color: 0x818cf8 });
+  const line = new THREE.Mesh(
+    new THREE.BoxGeometry(0.08, length - 0.2, 0.06),
+    lineMat
+  );
+  line.position.set(cx - side * (thickness/2 + 0.05), y, TRACK_DEPTH/2 - 0.05);
+  line.rotation.z = rotZ;
+  scene.add(line);
+
+  // Rapier collider
+  const rb = world.createRigidBody(
+    RAPIER.RigidBodyDesc.fixed().setTranslation(cx, y, 0)
+  );
+  const half = rotZ / 2;
+  world.createCollider(
+    RAPIER.ColliderDesc.cuboid(thickness/2, length/2, TRACK_DEPTH * 0.85 / 2)
+      .setRotation({ x: 0, y: 0, z: Math.sin(half), w: Math.cos(half) })
+      .setRestitution(0.6).setFriction(0.18),
+    rb
+  );
 }
 
 // ─────────────────────────────────────────────────────────────
