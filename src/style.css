@@ -221,6 +221,96 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .control-row .btn-primary { flex: 1; font-size: 14px; padding: 12px; }
 .control-row .btn-ghost { flex: 0 0 48px; font-size: 18px; padding: 12px 0; }
 
+/* 템플릿 버튼 — 자주 쓰는 시나리오 */
+.templates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.template-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  font-size: 11px;
+  background: rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  border-radius: 999px;
+  color: #c4b5fd;
+  transition: all 0.15s;
+}
+.template-btn:hover {
+  background: rgba(139, 92, 246, 0.2);
+  border-color: rgba(139, 92, 246, 0.5);
+}
+.template-btn .t-emoji { font-size: 12px; }
+.template-btn .t-label { font-weight: 600; }
+
+/* 칩 리스트 — 입력된 항목 시각화 */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+  min-height: 8px;
+}
+.chips.empty {
+  display: none;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 4px 3px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #e4e4e7;
+  user-select: none;
+}
+.chip-name {
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chip-count {
+  color: #a5b4fc;
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 0 4px;
+  min-width: 22px;
+  text-align: center;
+}
+.chip-dec, .chip-inc, .chip-x {
+  background: rgba(255, 255, 255, 0.06);
+  border: none;
+  padding: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #d4d4d8;
+  line-height: 1;
+}
+.chip-x {
+  background: rgba(244, 63, 94, 0.15);
+  color: #fca5a5;
+  margin-left: 3px;
+}
+.chip-dec:hover, .chip-inc:hover { background: rgba(255, 255, 255, 0.15); }
+.chip-x:hover { background: rgba(244, 63, 94, 0.3); }
+
+.summary .warn { color: var(--gold); font-weight: 600; }
+
 /* 포상 등수 — 가변 리스트 */
 .prizes .prize-row {
   display: flex;

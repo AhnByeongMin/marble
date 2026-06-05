@@ -58,8 +58,11 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
     const panel = document.getElementById('panel');
 
     // ── 입력 UI ─────────────────────────────────────────────────
+    const chipsEl = document.getElementById('chips');
+    const templatesEl = document.getElementById('templates');
     const participantsUI = new ParticipantsUI({
       textarea: participantsTA, addName, addCount, addBtn, summary,
+      chipsContainer: chipsEl, templatesContainer: templatesEl,
     });
     const prizesUI = new PrizesUI(prizesContainer);
     addPrizeBtn.addEventListener('click', () => prizesUI.add());

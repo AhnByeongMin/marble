@@ -38,7 +38,15 @@
           <span class="title">👥 참가자</span>
           <span class="hint"><code>이름*N</code> 또는 <code>이름</code>. 쉼표·줄바꿈 모두 구분.</span>
         </label>
-        <textarea id="participants" rows="4" placeholder="예) 안병민*3, 홍민지*3&#10;김부장 5&#10;박과장*2, 이대리"></textarea>
+
+        <!-- 템플릿 버튼 — 자주 쓰는 시나리오 -->
+        <div class="templates" id="templates"></div>
+
+        <textarea id="participants" rows="3" placeholder="예) 안병민*3, 홍민지*3&#10;김부장 5"></textarea>
+
+        <!-- 칩 리스트 — 입력된 항목 시각화 + 개별 제거 -->
+        <div class="chips empty" id="chips"></div>
+
         <div class="row">
           <input id="addName" placeholder="이름 추가" />
           <input id="addCount" type="number" min="1" max="50" value="1" />

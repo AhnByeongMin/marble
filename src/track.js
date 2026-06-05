@@ -142,9 +142,9 @@ export function buildTrack({ scene, world, RAPIER }) {
   // ── 점핑 패드 — y=-7 가운데 ──────────────────────────────────
   const jumpPad = createJumpPad({ scene, world, RAPIER, x: 0, y: 1, mat: jumpPadMat });
 
-  // ── 회전 디스크 — y=-7 ────────────────────────────────────
-  const disk = createRotatingDisk({ scene, world, RAPIER, x: -3, y: -7, mat: diskMat, dir: 1 });
-  const disk2 = createRotatingDisk({ scene, world, RAPIER, x: 3, y: -7, mat: diskMat, dir: -1 });
+  // ── 회전 막대 (스피너) — y=-7 좌우, 반대 방향 ─────────────
+  const spinner1 = createSpinner({ scene, world, RAPIER, x: -3.5, y: -7, mat: diskMat, dir: 1 });
+  const spinner2 = createSpinner({ scene, world, RAPIER, x:  3.5, y: -7, mat: diskMat, dir: -1 });
 
   // ── 시소 (좌우 진자) — y=-19 ──────────────────────────────
   const seesaw = createSeesaw({ scene, world, RAPIER, y: -19, mat: seesawMat });
@@ -202,8 +202,8 @@ export function buildTrack({ scene, world, RAPIER }) {
       windmill.tick(dt);
       windmill2.tick(dt);
       gate.tick(dt);
-      disk.tick(dt);
-      disk2.tick(dt);
+      spinner1.tick(dt);
+      spinner2.tick(dt);
       seesaw.tick(dt);
       for (const b of bumpers) b.tick(dt);
       jumpPad.tick(dt);
@@ -412,45 +412,32 @@ function createJumpPad({ scene, world, RAPIER, x, y, mat }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 회전 디스크 — Y 축 회전 (위 surface 가 도는 느낌)
-// 실제 collider 는 KinematicVelocity body 의 angular velocity 로 — 표면 friction 으로 구슬에 영향
+// 스피너 — 가는 회전 막대 (풍차의 1개 날개 같음). 구슬 통과 가능, 부딪치면 튕김.
 // ─────────────────────────────────────────────────────────────
-function createRotatingDisk({ scene, world, RAPIER, x, y, mat, dir }) {
-  const radius = 1.7, thickness = 0.4;
+function createSpinner({ scene, world, RAPIER, x, y, mat, dir }) {
+  const length = 2.6, thickness = 0.32, depth = TRACK_DEPTH * 0.7;
   const group = new THREE.Group();
   group.position.set(x, y, 0);
   scene.add(group);
-  const disk = new THREE.Mesh(
-    new THREE.CylinderGeometry(radius, radius, thickness, 24),
-    mat
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(length, thickness, depth), mat);
+  group.add(bar);
+  // 중심 hub (작은 sphere)
+  const hub = new THREE.Mesh(
+    new THREE.SphereGeometry(0.28, 12, 12),
+    new THREE.MeshStandardMaterial({ color: 0x0e7490, metalness: 0.7, roughness: 0.3 })
   );
-  disk.rotation.x = Math.PI / 2;
-  group.add(disk);
-  // 패턴 라인
-  const patMat = new THREE.MeshBasicMaterial({ color: 0xa5f3fc });
-  for (let i = 0; i < 4; i++) {
-    const a = (Math.PI / 2) * i;
-    const line = new THREE.Mesh(
-      new THREE.BoxGeometry(radius * 1.5, 0.08, 0.08),
-      patMat
-    );
-    line.position.z = thickness * 0.52;
-    line.rotation.z = a;
-    group.add(line);
-  }
+  group.add(hub);
 
-  // kinematic position based — Z축 회전
   const rb = world.createRigidBody(
     RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(x, y, 0)
   );
   world.createCollider(
-    RAPIER.ColliderDesc.cylinder(thickness/2, radius)
-      .setRotation({ x: Math.sin(Math.PI/4), y: 0, z: 0, w: Math.cos(Math.PI/4) })
-      .setRestitution(0.5).setFriction(0.55),
+    RAPIER.ColliderDesc.cuboid(length/2, thickness/2, depth/2)
+      .setRestitution(0.55).setFriction(0.15),
     rb
   );
 
-  const angularSpeed = 2.0 * dir;
+  const angularSpeed = 2.4 * dir;
   let angle = 0;
   return {
     tick(dt) {
