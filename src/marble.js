@@ -99,14 +99,21 @@ export function createMarble({ scene, world, RAPIER, def, x, y, z }) {
     finished: false,
     finishedAt: null,
     finishOrder: null, // 결승선 통과 순위 (0부터)
-    // 매 프레임 mesh/sprite 위치 동기화
+    // 매 프레임 mesh/sprite 위치 동기화 (+ finished 구슬은 살짝 옅게)
     sync() {
       const t = rb.translation();
       mesh.position.set(t.x, t.y, t.z);
       const r = rb.rotation();
       mesh.quaternion.set(r.x, r.y, r.z, r.w);
-      // sprite 는 구슬 위쪽으로
       sprite.position.set(t.x, t.y + RADIUS + 0.55, t.z);
+      // finished 후 emissive ↓ + sprite alpha ↓ — 결승선 근처에서 시각 혼란 줄임
+      if (this.finished && !this._fadedOut) {
+        mat.emissiveIntensity = 0.05;
+        mat.opacity = 0.35;
+        mat.transparent = true;
+        spriteMat.opacity = 0.3;
+        this._fadedOut = true;
+      }
     },
     dispose() {
       scene.remove(mesh);

@@ -64,7 +64,7 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
     const prizesUI = new PrizesUI(prizesContainer);
     addPrizeBtn.addEventListener('click', () => prizesUI.add());
     resultClose.addEventListener('click', () => hideResult(resultOverlay));
-    participantsTA.value = '안병민*3, 홍민지*3, 김부장*4';
+    // 입력은 사용자가 — placeholder 힌트만. value 미리 채우지 않음.
     participantsUI.refresh();
 
     // 모바일 패널 토글
@@ -185,10 +185,11 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
       }));
     }
 
-    // ── stuck 감지 + nudge ─────────────────────────────────────
-    // 매 90프레임 (~1.5초) 마다 결승 안 한 구슬의 y 변화 측정. 변화 작으면 random impulse.
+    // ── stuck 감지 + nudge (점진적 강화: impulse → 큰 impulse → 텔레포트) ─
+    // 매 30프레임 (~0.5초) 마다 결승 안 한 구슬 y 변화 측정.
     let nudgeFrameCount = 0;
-    const lastYSnapshot = new Map();   // marble.id → y
+    const lastYSnapshot = new Map();    // marble.id → y
+    const stuckStreak = new Map();      // marble.id → 연속 stuck 횟수
     function nudgeStuckMarbles() {
       const newSnapshot = new Map();
       for (const m of marbles) {
@@ -196,22 +197,40 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
         const y = m.rb.translation().y;
         newSnapshot.set(m.id, y);
         const prev = lastYSnapshot.get(m.id);
-        if (prev !== undefined) {
-          const dy = prev - y;  // 떨어지는 양 (양수가 정상)
-          if (dy < 0.4) {
-            // stuck — random horizontal impulse + 약간 위로
-            const impulse = {
-              x: (Math.random() - 0.5) * 2.5,
-              y: 0.3,
-              z: (Math.random() - 0.5) * 1.2,
-            };
-            m.rb.applyImpulse(impulse, true);
+        if (prev === undefined) continue;
+        const dy = prev - y;  // 0.5초 동안 떨어진 양 (양수가 정상)
+        if (dy < 0.3) {
+          // stuck — streak ++
+          const streak = (stuckStreak.get(m.id) || 0) + 1;
+          stuckStreak.set(m.id, streak);
+          if (streak >= 3) {
+            // 3회 누적 stuck — 텔레포트 위로 + 강한 impulse 리셋
+            const newY = Math.min(y + 4, TRACK.topY - 2);
+            m.rb.setTranslation({
+              x: (Math.random() - 0.5) * (TRACK.width - 3),
+              y: newY,
+              z: (Math.random() - 0.5) * (TRACK.depth - 0.5),
+            }, true);
+            m.rb.setLinvel({ x: (Math.random()-0.5)*3, y: -2, z: (Math.random()-0.5)*1.5 }, true);
+            m.rb.setAngvel({ x: 0, y: 0, z: 0 }, true);
+            stuckStreak.set(m.id, 0);
+            STAGE(`텔레포트: ${m.name} (3회 stuck)`);
+          } else {
+            // 1-2회 stuck — random impulse 강하게
+            m.rb.applyImpulse({
+              x: (Math.random() - 0.5) * 8,
+              y: 1.8 + Math.random() * 1.2,
+              z: (Math.random() - 0.5) * 3,
+            }, true);
             m.rb.applyTorqueImpulse({
-              x: (Math.random() - 0.5) * 0.4,
-              y: (Math.random() - 0.5) * 0.4,
-              z: (Math.random() - 0.5) * 0.4,
+              x: (Math.random() - 0.5) * 0.6,
+              y: (Math.random() - 0.5) * 0.6,
+              z: (Math.random() - 0.5) * 0.6,
             }, true);
           }
+        } else {
+          // 잘 떨어지는 중 — streak 리셋
+          stuckStreak.set(m.id, 0);
         }
       }
       lastYSnapshot.clear();

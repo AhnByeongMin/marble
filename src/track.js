@@ -113,28 +113,32 @@ export function buildTrack({ scene, world, RAPIER }) {
   // ── 회전 풍차 (y ≈ 0) ────────────────────────────────
   const windmill = createWindmill({ scene, world, RAPIER, y: 0, mat: windmillMat });
 
-  // ── 결승선 (sensor + 화려한 glow) ────────────────────
-  const finishGeom = new THREE.BoxGeometry(TRACK_WIDTH - 1, 0.4, TRACK_DEPTH);
-  const finishMesh = new THREE.Mesh(finishGeom, finishMat);
-  finishMesh.position.set(0, FINISH_Y, 0);
-  scene.add(finishMesh);
-  // 결승선 발광 — 더 강하게
-  const finishGlow = new THREE.PointLight(0x22c55e, 8, 14);
+  // ── 결승선 (sensor — mesh 제거, 라인 + 라이트만으로 시각화) ─────────
+  // 이전엔 sensor mesh(opacity 0.7) 를 그렸는데 카메라 줌인 시 finished 구슬이
+  // 그 안에 박혀있는 것처럼 보이는 시각 혼란 (2026-06-05 fix).
+  const finishGlow = new THREE.PointLight(0x22c55e, 12, 18);
   finishGlow.position.set(0, FINISH_Y, 0);
   scene.add(finishGlow);
-  // 결승선 위 빛나는 라인 (시인성)
+  // 결승선 시각 — 얇은 라인 두 줄 (위/아래) + 펄스
   const finishLineMat = new THREE.MeshBasicMaterial({ color: 0x86efac });
-  const finishLineMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(TRACK_WIDTH - 0.6, 0.08, TRACK_DEPTH + 0.2),
+  const lineTop = new THREE.Mesh(
+    new THREE.BoxGeometry(TRACK_WIDTH - 0.4, 0.12, TRACK_DEPTH + 0.2),
     finishLineMat
   );
-  finishLineMesh.position.set(0, FINISH_Y + 0.3, 0);
-  scene.add(finishLineMesh);
-  // 결승선 라인 부드러운 pulse — emissiveIntensity 의 sin 진동
+  lineTop.position.set(0, FINISH_Y + 0.4, 0);
+  scene.add(lineTop);
+  const lineBot = new THREE.Mesh(
+    new THREE.BoxGeometry(TRACK_WIDTH - 0.4, 0.12, TRACK_DEPTH + 0.2),
+    finishLineMat
+  );
+  lineBot.position.set(0, FINISH_Y - 0.4, 0);
+  scene.add(lineBot);
+  // 펄스 — 라이트 강도 + 라인 색
   let pulsePhase = 0;
   const pulseTick = (dt) => {
     pulsePhase += dt * 2.5;
-    finishMat.emissiveIntensity = 1.2 + Math.sin(pulsePhase) * 0.7;
+    const t = 0.5 + Math.sin(pulsePhase) * 0.5;  // 0~1
+    finishGlow.intensity = 8 + t * 8;
   };
   // sensor — 통과 시 이벤트
   const finishRb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, FINISH_Y, 0));
@@ -270,7 +274,7 @@ function createWindmill({ scene, world, RAPIER, y, mat }) {
     );
   }
 
-  const angularSpeed = 0.5; // rad/sec — 너무 빠르면 구슬을 위로 차내서 통과 불가
+  const angularSpeed = 0.7; // rad/sec — 끼임 방지 + 적당한 차내기
   let angle = 0;
 
   return {

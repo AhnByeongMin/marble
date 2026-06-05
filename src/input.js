@@ -53,7 +53,7 @@ export function expandToMarbles(participants) {
 export class PrizesUI {
   constructor(container) {
     this.container = container;
-    this.items = [{ text: '치킨 기프티콘' }]; // 기본 1등 1개
+    this.items = [{ text: '' }]; // 기본 1등 1개 (빈 값, placeholder 만)
     this.render();
   }
   add() {
@@ -72,9 +72,10 @@ export class PrizesUI {
     this.items.forEach((it, idx) => {
       const row = document.createElement('div');
       row.className = 'prize-row';
+      const examples = ['예) 치킨 기프티콘', '예) 커피 쿠폰', '예) 5천원 상품권', '예) 음료수', '예) 사탕'];
       row.innerHTML = `
         <span class="prize-rank">${idx + 1}등</span>
-        <input type="text" placeholder="당첨 내용 (예: 치킨)" />
+        <input type="text" placeholder="${examples[idx % examples.length]}" />
         <button type="button" class="remove-btn" title="제거">×</button>
       `;
       const input = row.querySelector('input');
