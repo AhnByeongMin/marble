@@ -118,8 +118,8 @@ export class PrizesUI {
 export const TEMPLATES = [
   // 평일 연장 5명 추첨
   { id: 'weekday', label: '월~금',  emoji: '📅', names: ['월요일', '화요일', '수요일', '목요일', '금요일'] },
-  // 팀장 월·수 직접 하시는 경우 — 화·목·토 3명 추첨
-  { id: 'tts',     label: '화목토', emoji: '📌', names: ['화요일', '목요일', '토요일'] },
+  // 팀장 월·수 직접 하시는 경우 — 평일 중 화·목·금 3명 추첨
+  { id: 'tts',     label: '화목금', emoji: '📌', names: ['화요일', '목요일', '금요일'] },
 ];
 
 // ── 참가자 입력 UI — textarea + 칩 리스트 ─────────────────────

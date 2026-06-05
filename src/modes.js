@@ -16,13 +16,12 @@ export const MODES = {
     id: 'race',
     label: '레이스',
     emoji: '🏁',
-    description: '좌→우 가로 코스 — 점프대/장애물 통과',
+    description: '좌→우 핀볼 코스 — 벽/핀 튕기며 결승까지',
     trackType: 'race',
     cameraMode: 'side-follow',
-    // X+ 방향 지속 가속 — 트랙 경사로 + gravity X 둘 다.
-    // gravity Y 도 강하게 (구슬이 바닥에 빨리 안착 → 굴러감)
-    gravity: { x: 5, y: -16, z: 0 },
-    startImpulse: { x: 6, y: 0.4, z: 0.3 },
+    // gravity Y 만 — X 추진은 트랙 경사 + 시작 임펄스 + 핀 튕김으로
+    gravity: { x: 0, y: -18, z: 0 },
+    startImpulse: { x: 10, y: 0.4, z: 0.3 },  // 초기 X+ 강하게
     reverseRanking: false,
   },
   REVERSE: {

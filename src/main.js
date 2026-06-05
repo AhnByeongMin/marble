@@ -193,23 +193,24 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
       shuffled.forEach((def, i) => {
         let x, y, z;
         if (spec.type === 'race') {
-          // 레이스 — Z 축에 일렬, X 는 시작점 + 약간 noise, Y 는 약간 위
+          // 레이스 — W자 채널 시작 waypoint(-28, 5) 근처. Z 분산.
           const cols = Math.min(shuffled.length, 4);
           const c = i % cols;
           const r = Math.floor(i / cols);
           const zRange = spec.depth - 0.6;
-          x = spec.startX + 0.5 + r * 0.8 + (Math.random() - 0.5) * 0.3;
-          y = 2 + (Math.random() - 0.5) * 0.4;
+          x = -27 + r * 0.8 + (Math.random() - 0.5) * 0.3;
+          y = 5 + (Math.random() - 0.5) * 1.0;     // channel 가운데 (waypoint y=5 근처)
           z = -zRange/2 + (zRange / Math.max(1, cols - 1)) * c + (Math.random() - 0.5) * 0.2;
         } else {
-          // 수직 — 게이트 위 격자. 좁으면 cluster 발생 → 충분히 넓게.
+          // 수직 — 트랙 거의 전체 폭으로 분산. 적은 인원 cluster 방지 핵심.
           const startY = spec.topY - 0.4;
-          const usableW = Math.min(8, spec.width - 3);   // 6 → 8 (cluster 방지)
-          const cols = Math.min(shuffled.length, 8);
+          const usableW = spec.width - 3;             // 트랙 폭의 거의 전부 (11)
+          const cols = Math.min(shuffled.length, 10);
           const c = i % cols;
           const r = Math.floor(i / cols);
-          x = -usableW / 2 + (usableW / Math.max(1, cols - 1)) * c + (Math.random() - 0.5) * 0.7;
-          y = startY + r * 1.1 + (Math.random() - 0.5) * 0.25;
+          // 격자 + 큰 noise (±1.0) — 3명이라도 충분히 떨어진 위치
+          x = -usableW / 2 + (usableW / Math.max(1, cols - 1)) * c + (Math.random() - 0.5) * 1.0;
+          y = startY + r * 1.2 + (Math.random() - 0.5) * 0.3;
           z = (Math.random() - 0.5) * (spec.depth - 0.6);
         }
         const m = createMarble({ scene, world, RAPIER, def, x, y, z });

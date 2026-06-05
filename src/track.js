@@ -8,10 +8,10 @@ const TRACK_TOP_Y = 30;
 const TRACK_BOTTOM_Y = -32;
 const FINISH_Y = -30;
 
-// 레이스 트랙 dims
+// 레이스 트랙 dims — 핀볼 채널 (좁고 길게, 위아래 부딪침 자주)
 const RACE_LEN = 60;        // 가로 길이 (X)
-const RACE_HEIGHT = 14;     // 세로 높이 (Y) - 트랙 굴곡 폭
-const RACE_DEPTH = 1.8;     // 깊이 (Z)
+const RACE_HEIGHT = 8;      // 세로 높이 (Y) — 좁게 (이전 14 → 8)
+const RACE_DEPTH = 1.8;
 const RACE_START_X = -28;
 const RACE_FINISH_X = 28;
 
@@ -274,15 +274,225 @@ function buildVerticalTrack({ scene, world, RAPIER }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 🏁 레이스 트랙 — 수평 좌→우 코스
-// 구슬이 X+ 방향으로 굴러 결승선까지. gravity (X+3, Y-10) — X 방향 자연 추진.
-// 장애물: 범퍼 / 점프대 / 회전 톱니 / 사선 deflector / 트랙 바닥 굴곡
+// 🏁 레이스 트랙 — W자 지그재그 채널 (위/아래 평행 벽 사이 좁은 길)
+// 사용자 그림 기반: 좌상 시작 → 골/봉우리 반복 → 우하 결승. 핀볼 아닌 진짜 코스.
+// 구슬이 channel 안에서 굴러 X+ 진행. 코너에서 부딪치며 자연스러운 레이스.
 // ─────────────────────────────────────────────────────────────
 function buildRaceTrack({ scene, world, RAPIER }) {
+  const D = RACE_DEPTH;
+  const startX = RACE_START_X, finishX = RACE_FINISH_X;
+
+  // 머티리얼
+  const wallMat = new THREE.MeshStandardMaterial({
+    color: 0x312e81, roughness: 0.5, metalness: 0.5,
+    emissive: 0x6366f1, emissiveIntensity: 0.35,
+  });
+  const edgeMat = new THREE.MeshBasicMaterial({ color: 0x818cf8 });
+  const finishLineMat = new THREE.MeshBasicMaterial({ color: 0x86efac });
+
+  // ── W자 waypoints (X, Y_center) — 좌→우 진행, Y 위아래 흔들림 ──
+  // 좌측 위에서 시작 → 봉우리/골 → 우측 아래 결승. 평균 Y 가 점진 아래.
+  const waypoints = [
+    { x: -28, y:  5 },   // 시작 (좌상)
+    { x: -16, y: -2 },   // 골
+    { x:  -4, y:  5 },   // 봉우리
+    { x:   8, y: -3 },   // 골
+    { x:  20, y:  4 },   // 봉우리
+    { x:  28, y: -5 },   // 결승 (우하)
+  ];
+  const channelW = 3.2;   // 위/아래 라인 사이 폭 (구슬 통과)
+  const wallThickness = 0.35;
+  const wallDepth = D - 0.1;
+
+  // 각 segment 의 위/아래 라인 cuboid 생성
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    const a = waypoints[i], b = waypoints[i + 1];
+    const cx = (a.x + b.x) / 2;
+    const cy = (a.y + b.y) / 2;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const segLen = Math.hypot(dx, dy) + 0.3;   // 약간 여유 (코너 겹침)
+    const angle = Math.atan2(dy, dx);
+    // segment 의 normal (수직 방향) — 위/아래 라인 offset
+    const nx = -Math.sin(angle), ny = Math.cos(angle);
+
+    for (const side of [+1, -1]) {
+      const wx = cx + nx * (channelW/2) * side;
+      const wy = cy + ny * (channelW/2) * side;
+      // mesh
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(segLen, wallThickness, wallDepth),
+        wallMat
+      );
+      mesh.position.set(wx, wy, 0);
+      mesh.rotation.z = angle;
+      scene.add(mesh);
+      // 글로우 라인 (안쪽 면)
+      const lineLen = segLen - 0.4;
+      const line = new THREE.Mesh(
+        new THREE.BoxGeometry(lineLen, 0.06, 0.06),
+        edgeMat
+      );
+      line.position.set(
+        wx - nx * (wallThickness/2 + 0.04) * side,
+        wy - ny * (wallThickness/2 + 0.04) * side,
+        wallDepth/2 - 0.05,
+      );
+      line.rotation.z = angle;
+      scene.add(line);
+      // Rapier collider
+      const rb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(wx, wy, 0));
+      const half = angle / 2;
+      world.createCollider(
+        RAPIER.ColliderDesc.cuboid(segLen/2, wallThickness/2, wallDepth/2)
+          .setRotation({ x: 0, y: 0, z: Math.sin(half), w: Math.cos(half) })
+          .setRestitution(0.45).setFriction(0.18),
+        rb
+      );
+    }
+  }
+
+  // ── 좌측 출발 캡 (channel 좌측 끝 막음) ──────────────────
+  {
+    const a = waypoints[0];
+    const dx0 = waypoints[1].x - a.x, dy0 = waypoints[1].y - a.y;
+    const angle = Math.atan2(dy0, dx0);
+    const capLen = channelW + 0.5;
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(wallThickness, capLen, wallDepth), wallMat
+    );
+    mesh.position.set(a.x, a.y, 0);
+    mesh.rotation.z = angle;
+    scene.add(mesh);
+    const rb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(a.x, a.y, 0));
+    const half = angle / 2;
+    world.createCollider(
+      RAPIER.ColliderDesc.cuboid(wallThickness/2, capLen/2, wallDepth/2)
+        .setRotation({ x: 0, y: 0, z: Math.sin(half), w: Math.cos(half) })
+        .setRestitution(0.3).setFriction(0.3),
+      rb
+    );
+  }
+
+  // ── 앞뒤 z 벽 (mesh 없음, collider 만) ────────────────────
+  for (const zSign of [1, -1]) {
+    const yRange = 12;   // -6 ~ +6 (waypoints 범위)
+    const rb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, 0, zSign * D/2));
+    world.createCollider(
+      RAPIER.ColliderDesc.cuboid(40, yRange, 0.1).setRestitution(0.3).setFriction(0.4), rb
+    );
+  }
+
+  // ── 출발 게이트 (좌측 끝 channel 안에) ──────────────────
+  const startW = waypoints[0];
+  const dx0 = waypoints[1].x - startW.x, dy0 = waypoints[1].y - startW.y;
+  const segAngle0 = Math.atan2(dy0, dx0);
+  // 게이트 위치: 출발 waypoint 에서 segment 방향으로 살짝 들어간 위치
+  const gateOffset = 1.2;
+  const gateX = startW.x + Math.cos(segAngle0) * gateOffset;
+  const gateY = startW.y + Math.sin(segAngle0) * gateOffset;
+  const gate = createRaceChannelGate({
+    scene, world, RAPIER,
+    x: gateX, y: gateY, angle: segAngle0,
+    width: channelW + 0.3, thickness: 0.35,
+  });
+
+  // ── 결승선 sensor (마지막 waypoint) ──────────────────────
+  const endW = waypoints[waypoints.length - 1];
+  const finishGlow = new THREE.PointLight(0x22c55e, 12, 18);
+  finishGlow.position.set(endW.x, endW.y, 0);
+  scene.add(finishGlow);
+  // 결승선 가로 라인
+  for (const dz of [-0.3, 0.3]) {
+    const line = new THREE.Mesh(
+      new THREE.BoxGeometry(0.12, channelW, D + 0.2),
+      finishLineMat
+    );
+    line.position.set(endW.x - 0.4, endW.y + dz * 0, 0);
+    scene.add(line);
+  }
+  // sensor — channel 폭 만큼만
+  const finishRb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(endW.x, endW.y, 0));
+  const finishCollider = world.createCollider(
+    RAPIER.ColliderDesc.cuboid(0.5, channelW/2, D/2)
+      .setSensor(true)
+      .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
+    finishRb
+  );
+
+  let pulsePhase = 0;
+  const pulseTick = (dt) => {
+    pulsePhase += dt * 2.5;
+    finishGlow.intensity = 8 + (0.5 + Math.sin(pulsePhase) * 0.5) * 10;
+  };
+
+  return {
+    gate,
+    finishColliderHandle: finishCollider.handle,
+    bumperHandles: new Set(),   // race 는 범퍼 없음
+    jumpPadHandles: new Set(),
+    bumpers: [],
+    jumpPad: { bump() {} },     // collision handler 안전망
+    waypoints,
+    applyMode(mode) {},
+    tick(dt) {
+      gate.tick(dt);
+      pulseTick(dt);
+    },
+  };
+}
+
+// 채널 게이트 — segment angle 방향으로 회전. 시작 시 segment normal 방향으로 슬라이드.
+function createRaceChannelGate({ scene, world, RAPIER, x, y, angle, width, thickness }) {
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xf43f5e, emissive: 0x9f1239, emissiveIntensity: 0.5,
+  });
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(thickness, width, RACE_DEPTH), mat
+  );
+  mesh.position.set(x, y, 0);
+  mesh.rotation.z = angle;
+  scene.add(mesh);
+  const rb = world.createRigidBody(
+    RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(x, y, 0)
+  );
+  const half = angle / 2;
+  const collider = world.createCollider(
+    RAPIER.ColliderDesc.cuboid(thickness/2, width/2, RACE_DEPTH/2)
+      .setRotation({ x: 0, y: 0, z: Math.sin(half), w: Math.cos(half) })
+      .setRestitution(0.2).setFriction(0.5),
+    rb
+  );
+  let opening = false, slide = 0;
+  // 슬라이드 방향 — segment normal 방향 (위쪽)
+  const nx = -Math.sin(angle), ny = Math.cos(angle);
+  const SPEED = 25;
+  return {
+    open() { if (!opening) { opening = true; collider.setEnabled(false); } },
+    reset() {
+      opening = false; slide = 0;
+      mesh.visible = true;
+      mesh.position.set(x, y, 0);
+      rb.setNextKinematicTranslation({ x, y, z: 0 });
+      collider.setEnabled(true);
+    },
+    tick(dt) {
+      if (!opening || slide >= 15) return;
+      slide = Math.min(15, slide + SPEED * dt);
+      mesh.position.x = x + nx * slide;
+      mesh.position.y = y + ny * slide;
+      rb.setNextKinematicTranslation({ x: x + nx * slide, y: y + ny * slide, z: 0 });
+      if (slide >= 15) mesh.visible = false;
+    },
+  };
+}
+
+// 옛 함수 (사용 안 함, 참고용 보존)
+function buildRaceTrackOld_REMOVED({ scene, world, RAPIER }) {
   const L = RACE_LEN, H = RACE_HEIGHT, D = RACE_DEPTH;
   const startX = RACE_START_X, finishX = RACE_FINISH_X;
-  const floorY = -6;
-  const ceilY = floorY + H;
+  const floorY = -4;             // 좁은 채널: -4 ~ +4 (높이 8)
+  const ceilY = floorY + H;      // = 4
+  const midY = (floorY + ceilY) / 2;  // = 0
 
   // ── 머티리얼 ──────────────────────────────────────────────
   const wallMat = new THREE.MeshStandardMaterial({
@@ -306,42 +516,34 @@ function buildRaceTrack({ scene, world, RAPIER }) {
   });
   const finishLineMat = new THREE.MeshBasicMaterial({ color: 0x86efac });
 
-  // ── 경사로 바닥 (시작 → 결승 Y 점진 감소) — 자연 X+ 굴러감 ──
-  // 시작 Y=-3, 결승 Y=-9 (6m 떨어짐). 5 segment 의 평균 경사 ≈ atan(6/56) ≈ 6°.
-  // 각 segment 를 그 경사로 회전된 cuboid 로 — 모서리 없이 매끄러운 경사.
-  const seg = 5;
-  const startFloorY = -3;
-  const endFloorY = -9;
-  for (let i = 0; i < seg; i++) {
-    const segLen = (L + 1) / seg;
-    const x = startX + segLen * (i + 0.5);
-    const y = startFloorY + (endFloorY - startFloorY) * (i + 0.5) / seg;
-    // 경사 각도 — 다음 segment 와 연결되는 방향
-    const dy = (endFloorY - startFloorY) / seg;
-    const angle = Math.atan2(dy, segLen);   // 음수 (X+ 방향 아래로)
-    const h = 0.6;
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(segLen, h, D), floorMat);
-    mesh.position.set(x, y, 0);
-    mesh.rotation.z = angle;
+  // ── 평평한 바닥 + 천장 (좁은 채널) ──────────────────────
+  // 핀볼 채널처럼 위/아래 벽 사이에 구슬 튕김. X+ 추진은 시작 임펄스 + 핀/범퍼.
+  // 살짝 경사 (X+ 방향 약하게 아래) — 추진력 보조.
+  const tiltAngle = 0.05;   // ~3°. gravity Y 와 합치면 X 방향 가속 ~ 0.9 m/s²
+  function addAngledFloor(cy, h = 0.5) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(L + 1, h, D + 0.4), wallMat);
+    mesh.position.set(0, cy, 0);
+    mesh.rotation.z = -tiltAngle;
     scene.add(mesh);
-    const rb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(x, y, 0));
-    const half = angle / 2;
+    const rb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, cy, 0));
+    const half = -tiltAngle / 2;
     world.createCollider(
-      RAPIER.ColliderDesc.cuboid(segLen/2, h/2, D/2)
+      RAPIER.ColliderDesc.cuboid((L + 1)/2, h/2, (D + 0.4)/2)
         .setRotation({ x: 0, y: 0, z: Math.sin(half), w: Math.cos(half) })
-        .setRestitution(0.3).setFriction(0.35),
+        .setRestitution(0.4).setFriction(0.25),
       rb
     );
   }
-  // 천장
+  addAngledFloor(floorY);        // 바닥
+  // 천장 — 평평
   {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(L, 0.5, D + 1), wallMat);
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(L + 1, 0.5, D + 0.4), wallMat);
     mesh.position.set(0, ceilY, 0);
     scene.add(mesh);
     const rb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, ceilY, 0));
     world.createCollider(
-      RAPIER.ColliderDesc.cuboid(L/2, 0.25, (D + 1)/2)
-        .setRestitution(0.3).setFriction(0.4),
+      RAPIER.ColliderDesc.cuboid((L + 1)/2, 0.25, (D + 0.4)/2)
+        .setRestitution(0.4).setFriction(0.3),
       rb
     );
   }
@@ -369,25 +571,49 @@ function buildRaceTrack({ scene, world, RAPIER }) {
   const gateY = (floorY + ceilY)/2;
   const gate = createRaceGate({ scene, world, RAPIER, x: startX + 1, y: gateY, h: H - 0.4 });
 
-  // ── 장애물 — 트랙 경사 위쪽 영역에 배치 (X+ 진행 막지 않게) ─
-  // 트랙 바닥 곡선: startFloorY=-3 → endFloorY=-9.  각 X 위치의 바닥 Y 계산
-  function floorYAt(x) {
-    const t = (x - startX) / L;
-    return startFloorY + (endFloorY - startFloorY) * t;
+  // ── 핀볼 코스 장애물 — 트랙 안에 핀/범퍼/deflector 풍부 ───
+  // 트랙 좁은 (Y 폭 8) 채널 안에 구슬이 위아래/벽 튕기며 X+ 진행.
+  // 핀 — 트랙 위/아래 alternating 으로 배치 (지그재그). 구슬이 핀에 부딪쳐 위/아래로 튕김.
+  const pinRadius = 0.32;
+  const pinHeight = D - 0.4;
+  const pinGeom = new THREE.CylinderGeometry(pinRadius, pinRadius, pinHeight, 14);
+  const pinMatList = [
+    new THREE.MeshStandardMaterial({ color: 0x8b5cf6, roughness: 0.3, metalness: 0.7, emissive: 0x6366f1, emissiveIntensity: 0.9 }),
+    new THREE.MeshStandardMaterial({ color: 0x06b6d4, roughness: 0.3, metalness: 0.7, emissive: 0x0891b2, emissiveIntensity: 0.9 }),
+    new THREE.MeshStandardMaterial({ color: 0xec4899, roughness: 0.3, metalness: 0.7, emissive: 0xbe185d, emissiveIntensity: 0.9 }),
+  ];
+  // 핀 배치 — X 간격 3.5, Y 는 1.5 또는 -1.5 alternating
+  let pinIdx = 0;
+  for (let x = startX + 6; x <= finishX - 6; x += 3.5) {
+    const yOffset = (pinIdx % 2 === 0) ? 1.8 : -1.8;
+    const mat = pinMatList[pinIdx % pinMatList.length];
+    const mesh = new THREE.Mesh(pinGeom, mat);
+    mesh.position.set(x, yOffset, 0);
+    mesh.rotation.x = Math.PI / 2;
+    scene.add(mesh);
+    const rb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(x, yOffset, 0));
+    world.createCollider(
+      RAPIER.ColliderDesc.cylinder(pinHeight/2, pinRadius)
+        .setRotation({ x: Math.sin(Math.PI/4), y: 0, z: 0, w: Math.cos(Math.PI/4) })
+        .setRestitution(0.65).setFriction(0.15),
+      rb
+    );
+    pinIdx++;
   }
-  const bumpers = [];
-  // 범퍼 — 바닥 살짝 위 (Y = floorY + 1) — 구슬이 굴러가다 부딪힘
-  for (const bx of [-18, -8, 4, 16]) {
-    bumpers.push(createBumperRace({ scene, world, RAPIER, x: bx, y: floorYAt(bx) + 1.2, mat: bumperMat }));
-  }
-  // 점프대 — 바닥에 묻혀 위 만 노출
-  const jumpPad = createJumpPadRace({ scene, world, RAPIER, x: -12, y: floorYAt(-12) + 0.6, mat: jumpPadMat });
-  const jumpPad2 = createJumpPadRace({ scene, world, RAPIER, x: 8, y: floorYAt(8) + 0.6, mat: jumpPadMat });
 
-  // 회전 톱니 — 천장에서 매달림 (Y 높음) → 빠른 구슬만 닿음, 느린 구슬 그 아래로 통과
-  const saw1 = createSaw({ scene, world, RAPIER, x: -22, y: ceilY - 2.5, mat: sawMat, dir: 1 });
-  const saw2 = createSaw({ scene, world, RAPIER, x:   0, y: ceilY - 2.5, mat: sawMat, dir: -1 });
-  const saw3 = createSaw({ scene, world, RAPIER, x:  22, y: ceilY - 2.5, mat: sawMat, dir: 1 });
+  // 범퍼 — 군데군데 트랙 가운데 큰 충돌체. X+ 추진 강화.
+  const bumpers = [];
+  for (const [bx, by] of [[-18, 0.5], [-8, -0.5], [4, 1], [14, -0.5], [22, 0.8]]) {
+    bumpers.push(createBumperRace({ scene, world, RAPIER, x: bx, y: by, mat: bumperMat }));
+  }
+
+  // 점프대 — 바닥에 박혀 위로 튐. X+ 방향으로 시각 임팩트.
+  const jumpPad  = createJumpPadRace({ scene, world, RAPIER, x: -14, y: floorY + 0.6, mat: jumpPadMat });
+  const jumpPad2 = createJumpPadRace({ scene, world, RAPIER, x:  10, y: floorY + 0.6, mat: jumpPadMat });
+
+  // 톱니 — 가운데 큰 회전체. 구슬이 부딪치면 X+ 방향으로 차줌.
+  const saw1 = createSaw({ scene, world, RAPIER, x: -22, y: ceilY - 2, mat: sawMat, dir: 1 });
+  const saw2 = createSaw({ scene, world, RAPIER, x:  18, y: floorY + 2, mat: sawMat, dir: -1 });
 
   // ── 결승선 sensor (우측 끝) ───────────────────────────────
   const finishGlow = new THREE.PointLight(0x22c55e, 12, 18);
@@ -424,15 +650,13 @@ function buildRaceTrack({ scene, world, RAPIER }) {
     bumperHandles, jumpPadHandles, bumpers,
     jumpPad,  // collision handler 가 .bump() 호출
     applyMode(mode) {
-      saw1.setSpeed(2.0);
-      saw2.setSpeed(2.0);
-      saw3.setSpeed(2.0);
+      saw1.setSpeed(2.5);
+      saw2.setSpeed(2.5);
     },
     tick(dt) {
       gate.tick(dt);
       saw1.tick(dt);
       saw2.tick(dt);
-      saw3.tick(dt);
       for (const b of bumpers) b.tick(dt);
       jumpPad.tick(dt);
       jumpPad2.tick(dt);
