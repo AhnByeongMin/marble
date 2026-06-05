@@ -221,6 +221,59 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .control-row .btn-primary { flex: 1; font-size: 14px; padding: 12px; }
 .control-row .btn-ghost { flex: 0 0 48px; font-size: 18px; padding: 12px 0; }
 
+/* 모드 셀렉터 — 2x2 그리드 */
+.modes-section { margin-top: 14px; }
+.modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 10px;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #d4d4d8;
+  transition: all 0.15s;
+}
+.mode-btn:hover {
+  background: rgba(139, 92, 246, 0.1);
+  border-color: rgba(139, 92, 246, 0.25);
+}
+.mode-btn.active {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(139, 92, 246, 0.25));
+  border-color: rgba(139, 92, 246, 0.6);
+  color: white;
+  box-shadow: 0 0 14px rgba(139, 92, 246, 0.3) inset;
+}
+.mode-btn .m-emoji { font-size: 14px; }
+.mode-btn .m-label { font-weight: 600; font-size: 11px; }
+
+/* 결과 카드 모드 배지 */
+.mode-badge {
+  display: inline-block;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.2);
+  border: 1px solid rgba(139, 92, 246, 0.4);
+  color: #c4b5fd;
+  font-weight: 600;
+  margin-left: 8px;
+  vertical-align: middle;
+  -webkit-background-clip: initial;
+  background-clip: initial;
+  background-image: none;
+}
+.result-card h2 .mode-badge {
+  /* h2 의 gradient 텍스트 영향 받지 않게 */
+  color: #c4b5fd !important;
+}
+
 /* 템플릿 버튼 — 자주 쓰는 시나리오 */
 .templates {
   display: flex;

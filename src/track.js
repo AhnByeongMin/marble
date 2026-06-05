@@ -156,6 +156,7 @@ export function buildTrack({ scene, world, RAPIER }) {
 
   // ── 게이트 + 풍차 ────────────────────────────────────────
   const gate = createGate({ scene, world, RAPIER, y: TRACK_TOP_Y - 1.5 });
+  // 풍차/스피너 속도는 외부에서 setSpeed() 로 동적 조정 (모드 변경 시)
   const windmill = createWindmill({ scene, world, RAPIER, y: 17, mat: windmillMat });
   // 풍차 #2 (y=-23) 제거 — funnel 자리 양보. 결승 직전 박진감.
 
@@ -231,6 +232,12 @@ export function buildTrack({ scene, world, RAPIER }) {
     windmill, gate,
     finishColliderHandle: finishCollider.handle,
     bumperHandles, jumpPadHandles, bumpers, jumpPad,
+    // 모드 변경 시 풍차/스피너 속도 + 범퍼 반발 동적 적용
+    applyMode(mode) {
+      windmill.setSpeed(mode.windmillSpeed);
+      spinner1.setSpeed(mode.spinnerSpeed);
+      spinner2.setSpeed(mode.spinnerSpeed);
+    },
     tick(dt) {
       windmill.tick(dt);
       gate.tick(dt);
@@ -327,9 +334,10 @@ function createWindmill({ scene, world, RAPIER, y, mat, reverse = false }) {
       rb
     );
   }
-  const angularSpeed = reverse ? -0.75 : 0.75;
+  let angularSpeed = reverse ? -0.75 : 0.75;
   let angle = 0;
   return {
+    setSpeed(speed) { angularSpeed = (reverse ? -1 : 1) * Math.abs(speed); },
     tick(dt) {
       angle += angularSpeed * dt;
       group.rotation.z = angle;
@@ -596,9 +604,10 @@ function createSpinner({ scene, world, RAPIER, x, y, mat, dir }) {
     rb
   );
 
-  const angularSpeed = 2.4 * dir;
+  let angularSpeed = 2.4 * dir;
   let angle = 0;
   return {
+    setSpeed(speed) { angularSpeed = Math.abs(speed) * dir; },
     tick(dt) {
       angle += angularSpeed * dt;
       group.rotation.z = angle;

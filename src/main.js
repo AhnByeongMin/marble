@@ -35,6 +35,7 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
     const { CameraDirector } = await import('./camera-director.js');
     const { showResult, hideResult, fireConfetti } = await import('./result-screen.js');
     const { ParticipantsUI, PrizesUI } = await import('./input.js');
+    const { MODE_LIST, getMode, MODES } = await import('./modes.js');
     STAGE('모듈 import 완료');
 
     // ── DOM ─────────────────────────────────────────────────────
@@ -72,6 +73,27 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
 
     // 모바일 패널 토글
     panelToggle?.addEventListener('click', () => panel.classList.toggle('collapsed'));
+
+    // ── 모드 셀렉터 ─────────────────────────────────────────────
+    let currentMode = MODES.CLASSIC;
+    const modesEl = document.getElementById('modes');
+    function renderModes() {
+      modesEl.innerHTML = '';
+      for (const m of MODE_LIST) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'mode-btn' + (m.id === currentMode.id ? ' active' : '');
+        btn.innerHTML = `<span class="m-emoji">${m.emoji}</span><span class="m-label">${m.label}</span>`;
+        btn.title = m.description;
+        btn.addEventListener('click', () => {
+          if (running) return;          // 진행 중 모드 변경 X
+          currentMode = m;
+          renderModes();
+        });
+        modesEl.appendChild(btn);
+      }
+    }
+    renderModes();
 
     // ── Three / Rapier ──────────────────────────────────────────
     showStatus('Three.js 씬 준비…');
@@ -137,13 +159,14 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
       STAGE(`구슬 ${shuffled.length}개 spawn (셔플됨)`);
     }
 
-    // 형평성 3단계 — 게이트 열린 직후 카오스 임펄스
+    // 형평성 3단계 — 게이트 열린 직후 모드별 임펄스
     function chaosImpulse() {
+      const imp = currentMode.startImpulse;
       for (const m of marbles) {
         m.rb.applyImpulse({
-          x: (Math.random() - 0.5) * 6,
-          y: 0.3,
-          z: (Math.random() - 0.5) * 1.2,
+          x: (Math.random() - 0.5) * imp.x * 2,
+          y: imp.y + Math.random() * imp.y,
+          z: (Math.random() - 0.5) * imp.z * 2,
         }, true);
         m.rb.applyTorqueImpulse({
           x: (Math.random() - 0.5) * 0.4,
@@ -333,8 +356,11 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
 
       await countdown();
 
+      // 모드별 파라미터 적용 — gravity + 풍차/스피너 속도
+      world.gravity = { x: 0, y: currentMode.gravityY, z: 0 };
+      track.applyMode(currentMode);
       track.gate.open();
-      // 형평성 — 게이트 열린 순간 카오스 임펄스. 시작 위치 영향 무력화.
+      // 형평성 — 게이트 열린 순간 모드별 임펄스
       chaosImpulse();
       running = true;
       runStartTime = performance.now();
@@ -409,6 +435,8 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
           showResult({
             overlayEl: resultOverlay, listEl: resultList,
             marbles, prizes: prizesUI.getPrizes(),
+            reverseRanking: currentMode.reverseRanking,
+            modeLabel: currentMode.label,
           });
           fireConfetti();
           running = false;

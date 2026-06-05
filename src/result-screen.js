@@ -1,12 +1,20 @@
 // 결과 카드 — 순위별 이름 + 당첨내용, 1등 강조. confetti (vanilla canvas).
 
-export function showResult({ overlayEl, listEl, marbles, prizes }) {
+export function showResult({ overlayEl, listEl, marbles, prizes, reverseRanking = false, modeLabel = '' }) {
+  // finishOrder 기준 정렬. reverseRanking=true 면 마지막 통과자가 1등.
   const finished = [...marbles].filter(m => m.finished).sort((a, b) => a.finishOrder - b.finishOrder);
+  if (reverseRanking) finished.reverse();
   const incomplete = marbles.filter(m => !m.finished);
   const all = [...finished, ...incomplete];
 
   const cap = Math.max(prizes.length, 5);
   const top = all.slice(0, cap);
+
+  // 모드 표시 (옵션) — 결과 카드 제목 위에 작은 배지
+  const h2 = overlayEl.querySelector('h2');
+  if (h2 && modeLabel) {
+    h2.innerHTML = `🏆 추첨 결과 <span class="mode-badge">${escapeHtml(modeLabel)}</span>`;
+  }
 
   listEl.innerHTML = '';
   top.forEach((m, idx) => {
