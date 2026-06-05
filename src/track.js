@@ -93,30 +93,24 @@ export function buildTrack({ scene, world, RAPIER }) {
     scene.add(line);
   }
 
-  // ── 사이드 데플렉터 — 벽 따라 직선 낙하 방지 (지그재그) ────
-  // 좌우 alternating 비스듬한 panel. 구슬이 벽 가까이 떨어지면 안쪽으로 튕김.
-  // 각도 0.5 rad (~28°), 길이 2.6, 위치 = 핀 zone 사이 빈 영역.
+  // ── 사이드 데플렉터 — 좌우 대칭 페어 (형평성) ───────────
+  // 이전 좌·우 지그재그는 시작 위치 따라 만나는 장애물이 달라 trajectory 비대칭.
+  // 같은 y 에 좌·우 페어로 → 트랙 좌우 대칭 → 시작 x 위치 영향 ↓ (2026-06-05 fix).
   const deflectorMat = new THREE.MeshStandardMaterial({
     color: 0x312e81, roughness: 0.5, metalness: 0.5,
     emissive: 0x6366f1, emissiveIntensity: 0.4,
   });
-  // [side, y] — side: -1 좌측, +1 우측
-  const deflectors = [
-    [-1, 19],   // 보라 핀 아래
-    [ 1, 13],   // 범퍼 위 (벽쪽 보강)
-    [-1,  4],   // 시안 핀과 점핑패드 사이 (좌)
-    [ 1, -2],   // 점핑패드와 스피너 사이 (우)
-    [-1, -8],   // 스피너 좌측 외곽
-    [ 1, -8],   // 스피너 우측 외곽
-  ];
-  for (const [side, y] of deflectors) {
-    buildDeflector({
-      scene, world, RAPIER, mat: deflectorMat,
-      side, y,
-      length: 2.6, thickness: 0.35,
-      angleRad: 0.5,
-      wallX: wallX,
-    });
+  const deflectorYs = [19, 13, 4, -2, -8];   // 좌우 페어로 각 y 에 배치
+  for (const y of deflectorYs) {
+    for (const side of [-1, +1]) {
+      buildDeflector({
+        scene, world, RAPIER, mat: deflectorMat,
+        side, y,
+        length: 2.6, thickness: 0.35,
+        angleRad: 0.5,
+        wallX: wallX,
+      });
+    }
   }
 
   // ── 핀 격자 — 끼임 방지 위해 모두 stagger, 안쪽 polygon ─────

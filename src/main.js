@@ -115,19 +115,42 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
 
     function spawnMarbles(defs) {
       clearMarbles();
+      // 형평성 1단계 — spawn 순서 셔플 (같은 입력이라도 매번 다른 위치 매핑)
+      const shuffled = [...defs];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
       const startY = TRACK.topY - 0.4;
-      const usableW = TRACK.width - 2.5;
-      const cols = Math.min(defs.length, 8);
-      defs.forEach((def, i) => {
+      // 형평성 2단계 — spawn 영역 좁힘 (가운데 모아 시작 위치 격차 ↓)
+      const usableW = Math.min(6, TRACK.width - 4);
+      const cols = Math.min(shuffled.length, 6);
+      shuffled.forEach((def, i) => {
         const c = i % cols;
         const r = Math.floor(i / cols);
-        const x = -usableW / 2 + (usableW / Math.max(1, cols - 1)) * c + (Math.random() - 0.5) * 0.3;
-        const y = startY + r * 1.2 + (Math.random() - 0.5) * 0.15;
+        const x = -usableW / 2 + (usableW / Math.max(1, cols - 1)) * c + (Math.random() - 0.5) * 0.5;
+        const y = startY + r * 1.0 + (Math.random() - 0.5) * 0.2;
         const z = (Math.random() - 0.5) * (TRACK.depth - 0.6);
         const m = createMarble({ scene, world, RAPIER, def, x, y, z });
         marbles.push(m);
       });
-      STAGE(`구슬 ${defs.length}개 spawn`);
+      STAGE(`구슬 ${shuffled.length}개 spawn (셔플됨)`);
+    }
+
+    // 형평성 3단계 — 게이트 열린 직후 카오스 임펄스
+    function chaosImpulse() {
+      for (const m of marbles) {
+        m.rb.applyImpulse({
+          x: (Math.random() - 0.5) * 6,
+          y: 0.3,
+          z: (Math.random() - 0.5) * 1.2,
+        }, true);
+        m.rb.applyTorqueImpulse({
+          x: (Math.random() - 0.5) * 0.4,
+          y: (Math.random() - 0.5) * 0.4,
+          z: (Math.random() - 0.5) * 0.4,
+        }, true);
+      }
     }
 
     function previewMarbles() {
@@ -311,11 +334,13 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
       await countdown();
 
       track.gate.open();
+      // 형평성 — 게이트 열린 순간 카오스 임펄스. 시작 위치 영향 무력화.
+      chaosImpulse();
       running = true;
       runStartTime = performance.now();
       nudgeFrameCount = 0;
       lastYSnapshot.clear();
-      STAGE('▶ 출발 — 게이트 열림');
+      STAGE('▶ 출발 — 게이트 열림 + 카오스 임펄스');
       startBtn.disabled = false;
       resetBtn.disabled = false;
     }
