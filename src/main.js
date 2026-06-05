@@ -74,37 +74,19 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
     // 모바일 패널 토글
     panelToggle?.addEventListener('click', () => panel.classList.toggle('collapsed'));
 
-    // ── 모드 + localStorage (모드 전환 시 reload, state 복원) ──
-    const LS_KEY = 'marble.state';
-    function saveState() {
-      try {
-        localStorage.setItem(LS_KEY, JSON.stringify({
-          mode: currentMode.id,
-          participants: participantsTA.value,
-          prizes: prizesUI.items.map(it => it.text),
-        }));
-      } catch {}
+    // ── 모드 + localStorage (모드만 저장, 입력은 매번 새로) ──
+    // 사용자 요청: 기본값 미리 채우지 않음 — placeholder 만.
+    const LS_KEY = 'marble.mode';
+    function saveMode() {
+      try { localStorage.setItem(LS_KEY, currentMode.id); } catch {}
     }
-    function loadState() {
-      try {
-        const raw = localStorage.getItem(LS_KEY);
-        if (!raw) return null;
-        return JSON.parse(raw);
-      } catch { return null; }
+    function loadMode() {
+      try { return localStorage.getItem(LS_KEY); } catch { return null; }
     }
-    const savedState = loadState();
-    let currentMode = savedState ? getMode(savedState.mode) : MODES.CLASSIC;
-    // 저장된 입력 복원
-    if (savedState) {
-      if (savedState.participants) {
-        participantsTA.value = savedState.participants;
-      }
-      if (Array.isArray(savedState.prizes) && savedState.prizes.length) {
-        prizesUI.items = savedState.prizes.map(text => ({ text }));
-        prizesUI.render();
-      }
-    }
+    let currentMode = getMode(loadMode()) || MODES.CLASSIC;
     participantsUI.refresh();
+    // saveState 별칭 (기존 호출 호환)
+    const saveState = saveMode;
 
     const modesEl = document.getElementById('modes');
     function renderModes() {
@@ -392,36 +374,17 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
         // 진행 방향: vertical 은 y 감소(아래로), race 는 x 증가(우측으로)
         const progress = spec.type === 'race' ? (x - prev[0]) : (prev[1] - y);
         if (progress < 0.3) {
-          // stuck — streak ++
+          // stuck — streak 누적. 텔레포트 없음 (사용자 혼란 원인).
+          // impulse 만, streak 따라 점진적으로 강해짐 (1배 → 최대 4배).
           const streak = (stuckStreak.get(m.id) || 0) + 1;
           stuckStreak.set(m.id, streak);
-          if (streak >= 2) {   // 3 → 2 (1초 stuck 후 텔레포트, 더 적극적)
-            // 3회 누적 stuck — 모드별 안전한 위치로 텔레포트
-            let nx, ny, nz, vx, vy, vz;
-            if (spec.type === 'race') {
-              nx = Math.min(x + 3, spec.finishX - 4);
-              ny = 1 + Math.random() * 2;
-              nz = (Math.random() - 0.5) * (spec.depth - 0.5);
-              vx = 6 + Math.random() * 2;  vy = 0;  vz = (Math.random()-0.5)*1.5;
-            } else {
-              nx = (Math.random() - 0.5) * (spec.width - 3);
-              ny = Math.min(y + 4, spec.topY - 2);
-              nz = (Math.random() - 0.5) * (spec.depth - 0.5);
-              vx = (Math.random()-0.5)*3;  vy = -2;  vz = (Math.random()-0.5)*1.5;
-            }
-            m.rb.setTranslation({ x: nx, y: ny, z: nz }, true);
-            m.rb.setLinvel({ x: vx, y: vy, z: vz }, true);
-            m.rb.setAngvel({ x: 0, y: 0, z: 0 }, true);
-            stuckStreak.set(m.id, 0);
-            STAGE(`텔레포트: ${m.name} (3회 stuck)`);
-          } else {
-            // 1회 stuck — 약한 random impulse (자연스럽게 풀리도록)
-            m.rb.applyImpulse({
-              x: (Math.random() - 0.5) * 3,
-              y: 0.8,
-              z: (Math.random() - 0.5) * 1.2,
-            }, true);
-          }
+          const factor = Math.min(streak, 4);   // 1, 2, 3, 4, 4, 4...
+          m.rb.applyImpulse({
+            x: (Math.random() - 0.5) * 3 * factor,
+            y: 0.6 * factor,
+            z: (Math.random() - 0.5) * 1.2 * factor,
+          }, true);
+          // 60초 안전망 (main loop) 이 최후 보루 — stuck 영원 안 됨
         } else {
           // 잘 떨어지는 중 — streak 리셋
           stuckStreak.set(m.id, 0);

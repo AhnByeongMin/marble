@@ -348,6 +348,44 @@ function buildRaceTrack({ scene, world, RAPIER }) {
     }
   }
 
+  // ── 코너 cap — segment 끝과 끝 사이 갭 메움 ────────────────
+  // 각 waypoint 의 위 line 끝점들 + 아래 line 끝점들 사이 작은 cap.
+  for (let i = 1; i < waypoints.length - 1; i++) {
+    const wp = waypoints[i];
+    // 인접 두 segment 의 normal (위/아래 line offset 방향)
+    const prevDx = wp.x - waypoints[i-1].x, prevDy = wp.y - waypoints[i-1].y;
+    const nextDx = waypoints[i+1].x - wp.x, nextDy = waypoints[i+1].y - wp.y;
+    const prevAng = Math.atan2(prevDy, prevDx);
+    const nextAng = Math.atan2(nextDy, nextDx);
+    for (const side of [+1, -1]) {
+      // 각 side 의 두 인접 line 끝점
+      const p1x = wp.x + -Math.sin(prevAng) * (channelW/2) * side;
+      const p1y = wp.y +  Math.cos(prevAng) * (channelW/2) * side;
+      const p2x = wp.x + -Math.sin(nextAng) * (channelW/2) * side;
+      const p2y = wp.y +  Math.cos(nextAng) * (channelW/2) * side;
+      const cx = (p1x + p2x) / 2, cy = (p1y + p2y) / 2;
+      const dx = p2x - p1x, dy = p2y - p1y;
+      const capLen = Math.hypot(dx, dy) + 0.3;
+      if (capLen < 0.4) continue;   // 너무 짧으면 skip
+      const capAng = Math.atan2(dy, dx);
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(capLen, wallThickness, wallDepth),
+        wallMat
+      );
+      mesh.position.set(cx, cy, 0);
+      mesh.rotation.z = capAng;
+      scene.add(mesh);
+      const rb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(cx, cy, 0));
+      const half = capAng / 2;
+      world.createCollider(
+        RAPIER.ColliderDesc.cuboid(capLen/2, wallThickness/2, wallDepth/2)
+          .setRotation({ x: 0, y: 0, z: Math.sin(half), w: Math.cos(half) })
+          .setRestitution(0.45).setFriction(0.18),
+        rb
+      );
+    }
+  }
+
   // ── 좌측 출발 캡 (channel 좌측 끝 막음) ──────────────────
   {
     const a = waypoints[0];
@@ -372,10 +410,34 @@ function buildRaceTrack({ scene, world, RAPIER }) {
 
   // ── 앞뒤 z 벽 (mesh 없음, collider 만) ────────────────────
   for (const zSign of [1, -1]) {
-    const yRange = 12;   // -6 ~ +6 (waypoints 범위)
     const rb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, 0, zSign * D/2));
     world.createCollider(
-      RAPIER.ColliderDesc.cuboid(40, yRange, 0.1).setRestitution(0.3).setFriction(0.4), rb
+      RAPIER.ColliderDesc.cuboid(40, 16, 0.1).setRestitution(0.3).setFriction(0.4), rb
+    );
+  }
+
+  // ── 외곽 boundary (Y 위/아래 + X 좌/우) — segment 갭 추락 차단 ──
+  // 사용자 발견: W 채널 코너에서 segment 가 매끄럽게 안 닿아 갭 발생.
+  // 구슬이 갭으로 빠지면 boundary 가 안전망. mesh 없음 (시각 X), collider 만.
+  // 위쪽 boundary y = +12
+  {
+    const rb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, 12, 0));
+    world.createCollider(
+      RAPIER.ColliderDesc.cuboid(40, 0.5, D + 1).setRestitution(0.3).setFriction(0.4), rb
+    );
+  }
+  // 아래쪽 boundary y = -12
+  {
+    const rb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -12, 0));
+    world.createCollider(
+      RAPIER.ColliderDesc.cuboid(40, 0.5, D + 1).setRestitution(0.3).setFriction(0.4), rb
+    );
+  }
+  // 우측 boundary (결승 너머 빠짐 방지) — x = finishX + 2.5
+  {
+    const rb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(finishX + 2.5, 0, 0));
+    world.createCollider(
+      RAPIER.ColliderDesc.cuboid(0.5, 14, D + 1).setRestitution(0.3).setFriction(0.4), rb
     );
   }
 
