@@ -192,9 +192,11 @@ export function buildTrack({ scene, world, RAPIER }) {
     line.position.set(0, FINISH_Y + dy, 0);
     scene.add(line);
   }
+  // sensor 폭은 funnel 출구 + 여유 만큼만 — funnel 안 지나는 구슬은 결승 인정 X (프리패스 차단)
   const finishRb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, FINISH_Y, 0));
+  const FINISH_SENSOR_HALF_W = 2.5;  // exitWidth(3)/2 + 여유 1
   const finishCollider = world.createCollider(
-    RAPIER.ColliderDesc.cuboid((TRACK_WIDTH-1)/2, 0.2, TRACK_DEPTH/2)
+    RAPIER.ColliderDesc.cuboid(FINISH_SENSOR_HALF_W, 0.2, TRACK_DEPTH/2)
       .setSensor(true)
       .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
     finishRb
@@ -498,6 +500,7 @@ function buildFunnel({ scene, world, RAPIER, yTop, yBottom, exitWidth, mat }) {
   // funnel 위쪽 끝이 벽 안에 박히면 코너 끼임 발생 — 반드시 벽보다 안쪽에.
   const halfTop = TRACK_WIDTH / 2 - 1.5;     // 위쪽 끝 x = ±5.5
   const halfBot = exitWidth / 2;
+  const innerWall = TRACK_WIDTH / 2 - 0.25;  // 벽 안쪽 면 = 5.75
   const dy = yTop - yBottom;
   const dx = halfTop - halfBot;
   const length = Math.hypot(dx, dy);          // 사선 길이
@@ -546,6 +549,25 @@ function buildFunnel({ scene, world, RAPIER, yTop, yBottom, exitWidth, mat }) {
   }
   addSlope(-1);   // 좌측 벽 \
   addSlope(+1);   // 우측 벽 /
+
+  // ── Caps — funnel 위쪽 끝과 트랙 벽 사이의 0.25m 갭 막음 ───
+  // 이전: 갭 너무 작아도 빠른 구슬은 Rapier discrete CCD 로 관통 가능 → 프리패스 회귀.
+  // 가로 막대로 빠짐없이 차단.
+  const capW = innerWall - halfTop + 0.3;       // 갭 폭 + 양쪽 여유
+  const capH = 0.5;
+  for (const side of [-1, +1]) {
+    const cx = side * (halfTop + innerWall) / 2;
+    const cy = yTop;
+    const capMesh = new THREE.Mesh(new THREE.BoxGeometry(capW, capH, TRACK_DEPTH), funnelMat);
+    capMesh.position.set(cx, cy, 0);
+    scene.add(capMesh);
+    const capRb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(cx, cy, 0));
+    world.createCollider(
+      RAPIER.ColliderDesc.cuboid(capW/2, capH/2, TRACK_DEPTH/2)
+        .setRestitution(0.4).setFriction(0.3),
+      capRb
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────

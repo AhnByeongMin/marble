@@ -71,13 +71,14 @@ export function createMarble({ scene, world, RAPIER, def, x, y, z }) {
   sprite.position.set(x, y + RADIUS + 0.5, z);
   scene.add(sprite);
 
-  // Rapier rigid body — damping 약하게 (끼임 후 회복 빨라야), restitution 적당, friction 낮음
+  // Rapier rigid body — damping 약하게, CCD 활성 (빠른 속도 관통 방지)
   const rb = world.createRigidBody(
     RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(x, y, z)
       .setLinvel((Math.random() - 0.5) * 0.5, 0, (Math.random() - 0.5) * 0.2)
       .setLinearDamping(0.0)
       .setAngularDamping(0.05)
+      .setCcdEnabled(true)
   );
   const collider = world.createCollider(
     RAPIER.ColliderDesc.ball(RADIUS)
