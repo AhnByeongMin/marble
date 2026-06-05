@@ -287,17 +287,16 @@ function buildRaceTrack({ scene, world, RAPIER }) {
   const edgeMat = new THREE.MeshBasicMaterial({ color: 0x818cf8 });
   const finishLineMat = new THREE.MeshBasicMaterial({ color: 0x86efac });
 
-  // ── W자 waypoints (X, Y_center) — 좌→우 진행, Y 위아래 흔들림 ──
-  // 좌측 위에서 시작 → 봉우리/골 → 우측 아래 결승. 평균 Y 가 점진 아래.
+  // ── W자 waypoints — Y 변화 줄여 코너 각도 완만하게 (구슬 통과 ↑) ──
   const waypoints = [
-    { x: -28, y:  5 },   // 시작 (좌상)
-    { x: -16, y: -2 },   // 골
-    { x:  -4, y:  5 },   // 봉우리
-    { x:   8, y: -3 },   // 골
-    { x:  20, y:  4 },   // 봉우리
-    { x:  28, y: -5 },   // 결승 (우하)
+    { x: -28, y:  3 },   // 시작
+    { x: -17, y: -1 },   // 골 (완만)
+    { x:  -5, y:  3 },   // 봉우리 (완만)
+    { x:   8, y: -2 },   // 골
+    { x:  20, y:  2 },   // 봉우리
+    { x:  28, y: -4 },   // 결승
   ];
-  const channelW = 3.2;   // 위/아래 라인 사이 폭 (구슬 통과)
+  const channelW = 3.8;          // 3.2 → 3.8 (구슬 통과 여유)
   const wallThickness = 0.35;
   const wallDepth = D - 0.1;
 
@@ -348,41 +347,35 @@ function buildRaceTrack({ scene, world, RAPIER }) {
     }
   }
 
-  // ── 코너 cap — segment 끝과 끝 사이 갭 메움 ────────────────
-  // 각 waypoint 의 위 line 끝점들 + 아래 line 끝점들 사이 작은 cap.
+  // ── 코너 라운딩 — sphere cap 으로 직각 모서리 부드럽게 ──────
+  // 사용자 발견: 직각 모서리에 구슬이 양면 동시 접촉으로 균형잡혀 못 넘어감.
+  // 각 중간 waypoint 의 위/아래 line 끝점에 sphere — 둥근 표면 따라 굴러 통과.
+  const capRadius = wallThickness * 0.9;
+  const capGeom = new THREE.SphereGeometry(capRadius, 14, 10);
   for (let i = 1; i < waypoints.length - 1; i++) {
     const wp = waypoints[i];
-    // 인접 두 segment 의 normal (위/아래 line offset 방향)
     const prevDx = wp.x - waypoints[i-1].x, prevDy = wp.y - waypoints[i-1].y;
     const nextDx = waypoints[i+1].x - wp.x, nextDy = waypoints[i+1].y - wp.y;
     const prevAng = Math.atan2(prevDy, prevDx);
     const nextAng = Math.atan2(nextDy, nextDx);
     for (const side of [+1, -1]) {
-      // 각 side 의 두 인접 line 끝점
-      const p1x = wp.x + -Math.sin(prevAng) * (channelW/2) * side;
-      const p1y = wp.y +  Math.cos(prevAng) * (channelW/2) * side;
-      const p2x = wp.x + -Math.sin(nextAng) * (channelW/2) * side;
-      const p2y = wp.y +  Math.cos(nextAng) * (channelW/2) * side;
-      const cx = (p1x + p2x) / 2, cy = (p1y + p2y) / 2;
-      const dx = p2x - p1x, dy = p2y - p1y;
-      const capLen = Math.hypot(dx, dy) + 0.3;
-      if (capLen < 0.4) continue;   // 너무 짧으면 skip
-      const capAng = Math.atan2(dy, dx);
-      const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(capLen, wallThickness, wallDepth),
-        wallMat
-      );
-      mesh.position.set(cx, cy, 0);
-      mesh.rotation.z = capAng;
-      scene.add(mesh);
-      const rb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(cx, cy, 0));
-      const half = capAng / 2;
-      world.createCollider(
-        RAPIER.ColliderDesc.cuboid(capLen/2, wallThickness/2, wallDepth/2)
-          .setRotation({ x: 0, y: 0, z: Math.sin(half), w: Math.cos(half) })
-          .setRestitution(0.45).setFriction(0.18),
-        rb
-      );
+      // 두 인접 segment 의 normal 평균 위치 (코너 점)
+      const nx1 = -Math.sin(prevAng), ny1 = Math.cos(prevAng);
+      const nx2 = -Math.sin(nextAng), ny2 = Math.cos(nextAng);
+      // 두 line 끝점 각각에 sphere
+      for (const [nx, ny] of [[nx1, ny1], [nx2, ny2]]) {
+        const sx = wp.x + nx * (channelW/2) * side;
+        const sy = wp.y + ny * (channelW/2) * side;
+        const mesh = new THREE.Mesh(capGeom, wallMat);
+        mesh.position.set(sx, sy, 0);
+        scene.add(mesh);
+        const rb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(sx, sy, 0));
+        world.createCollider(
+          RAPIER.ColliderDesc.ball(capRadius)
+            .setRestitution(0.5).setFriction(0.15),
+          rb
+        );
+      }
     }
   }
 
