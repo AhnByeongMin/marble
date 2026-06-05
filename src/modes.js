@@ -35,13 +35,14 @@ export const MODES = {
     label: '카오스',
     emoji: '💥',
     description: '시작부터 폭발 + 강한 반발 — 격렬한 추첨',
-    gravityY: -28,
-    startImpulse: { x: 10, y: 3, z: 2 },
-    windmillSpeed: 1.6,
-    spinnerSpeed: 5.5,
-    bumperRestitution: 1.15,    // 1 초과 — 에너지 증폭 (Rapier 허용)
-    marbleRestitution: 0.85,
-    marbleFriction: 0.05,
+    gravityY: -30,
+    // 시작 임펄스 줄임 — 이전 (x±10, y+3) 은 구슬이 트랙 밖으로 튕김 (CCD 한계 넘음)
+    startImpulse: { x: 5, y: 1.2, z: 1.2 },
+    windmillSpeed: 1.2,
+    spinnerSpeed: 4.0,
+    bumperRestitution: 0.95,    // 1 미만 유지 (에너지 증폭 X)
+    marbleRestitution: 0.7,
+    marbleFriction: 0.1,
     reverseRanking: false,
   },
   REVERSE: {
