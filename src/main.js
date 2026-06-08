@@ -175,14 +175,12 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
       shuffled.forEach((def, i) => {
         let x, y, z;
         if (spec.type === 'race') {
-          // 레이스 — W자 채널 시작 waypoint(-28, 5) 근처. Z 분산.
-          const cols = Math.min(shuffled.length, 4);
-          const c = i % cols;
-          const r = Math.floor(i / cols);
-          const zRange = spec.depth - 0.6;
-          x = -27 + r * 0.8 + (Math.random() - 0.5) * 0.3;
-          y = 5 + (Math.random() - 0.5) * 1.0;     // channel 가운데 (waypoint y=5 근처)
-          z = -zRange/2 + (zRange / Math.max(1, cols - 1)) * c + (Math.random() - 0.5) * 0.2;
+          // 레이스 — channel 안쪽 spawn. waypoint[0] = (-28, 3), 게이트 X≈-26.5.
+          // spawn = 게이트 우측 (X+ 방향), channel 가운데(Y=3), Z 축에 분산.
+          const zRange = spec.depth - 0.7;
+          x = -25.5 + (Math.random() - 0.5) * 0.4;
+          y = 3 + (Math.random() - 0.5) * 0.5;
+          z = -zRange/2 + (zRange / Math.max(1, shuffled.length - 1)) * i + (Math.random() - 0.5) * 0.15;
         } else {
           // 수직 — 트랙 거의 전체 폭으로 분산. 적은 인원 cluster 방지 핵심.
           const startY = spec.topY - 0.4;
