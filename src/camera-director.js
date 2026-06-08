@@ -21,15 +21,9 @@ export class CameraDirector {
   }
 
   _setInitial() {
-    if (this.cameraMode === 'side-follow') {
-      const spec = TRACK_SPECS.race;
-      this.target.set(spec.startX, 0, 22);
-      this.lookAt.set(spec.startX, 0, 0);
-    } else {
-      const spec = TRACK_SPECS.vertical;
-      this.target.set(0, spec.topY - 4, 22);
-      this.lookAt.set(0, spec.topY - 6, 0);
-    }
+    const spec = TRACK_SPECS.vertical;
+    this.target.set(0, spec.topY - 4, 28);
+    this.lookAt.set(0, spec.topY - 6, 0);
     this.currentLookAt.copy(this.lookAt);
   }
 
@@ -41,7 +35,6 @@ export class CameraDirector {
   }
 
   update(marbles, dt) {
-    if (this.cameraMode === 'side-follow') return this._updateRace(marbles, dt);
     return this._updateVertical(marbles, dt);
   }
 
@@ -69,33 +62,6 @@ export class CameraDirector {
     } else {
       this.target.set(0, spec.finishY + 5, 20);
       this.lookAt.set(0, spec.finishY, 0);
-    }
-    this._applyLerp(dt);
-  }
-
-  _updateRace(marbles, dt) {
-    const spec = TRACK_SPECS.race;
-    // 레이스 — 선두 = X 가장 큰 (결승 가까운)
-    const leaders = marbles.filter(m => !m.finished).map(m => ({
-      x: m.rb.translation().x, y: m.rb.translation().y, m,
-    })).sort((a, b) => b.x - a.x);
-    const leader = leaders[0];
-    const allFinished = marbles.length > 0 && marbles.every(m => m.finished);
-    const nearFinish = leader && leader.x >= spec.finishX - 10;
-    if (allFinished) this.state = STATE.RESULT;
-    else if (nearFinish) this.state = STATE.FINISH;
-    else this.state = STATE.FOLLOW;
-
-    if (this.state === STATE.FOLLOW && leader) {
-      // 측면 follow — X 따라가며 살짝 위에서
-      this.target.set(leader.x - 4, leader.y + 4, 18);
-      this.lookAt.set(leader.x + 2, leader.y - 1, 0);
-    } else if (this.state === STATE.FINISH) {
-      this.target.set(spec.finishX - 6, 1, 14);
-      this.lookAt.set(spec.finishX, 0, 0);
-    } else {
-      this.target.set(spec.finishX - 4, 2, 16);
-      this.lookAt.set(spec.finishX, 0, 0);
     }
     this._applyLerp(dt);
   }

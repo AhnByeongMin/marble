@@ -173,51 +173,30 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
         [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
       }
       shuffled.forEach((def, i) => {
-        let x, y, z;
-        if (spec.type === 'race') {
-          // 레이스 — channel 안쪽 spawn. waypoint[0] = (-28, 3), 게이트 X≈-26.5.
-          // spawn = 게이트 우측 (X+ 방향), channel 가운데(Y=3), Z 축에 분산.
-          const zRange = spec.depth - 0.7;
-          x = -25.5 + (Math.random() - 0.5) * 0.4;
-          y = 3 + (Math.random() - 0.5) * 0.5;
-          z = -zRange/2 + (zRange / Math.max(1, shuffled.length - 1)) * i + (Math.random() - 0.5) * 0.15;
-        } else {
-          // 수직 — 트랙 거의 전체 폭으로 분산. 적은 인원 cluster 방지 핵심.
-          const startY = spec.topY - 0.4;
-          const usableW = spec.width - 3;             // 트랙 폭의 거의 전부 (11)
-          const cols = Math.min(shuffled.length, 10);
-          const c = i % cols;
-          const r = Math.floor(i / cols);
-          // 격자 + 큰 noise (±1.0) — 3명이라도 충분히 떨어진 위치
-          x = -usableW / 2 + (usableW / Math.max(1, cols - 1)) * c + (Math.random() - 0.5) * 1.0;
-          y = startY + r * 1.2 + (Math.random() - 0.5) * 0.3;
-          z = (Math.random() - 0.5) * (spec.depth - 0.6);
-        }
+        // 수직 트랙 — 게이트 위 격자. 트랙 거의 전체 폭 분산 (cluster 방지).
+        const startY = spec.topY - 0.4;
+        const usableW = spec.width - 3;
+        const cols = Math.min(shuffled.length, 10);
+        const c = i % cols;
+        const r = Math.floor(i / cols);
+        const x = -usableW / 2 + (usableW / Math.max(1, cols - 1)) * c + (Math.random() - 0.5) * 1.0;
+        const y = startY + r * 1.2 + (Math.random() - 0.5) * 0.3;
+        const z = (Math.random() - 0.5) * (spec.depth - 0.6);
         const m = createMarble({ scene, world, RAPIER, def, x, y, z });
         marbles.push(m);
       });
       STAGE(`구슬 ${shuffled.length}개 spawn (${spec.type})`);
     }
 
-    // 모드별 시작 임펄스 — race 는 X+ 방향으로 초기 추진
+    // 시작 카오스 임펄스 — 좌우 분산 (cluster 방지)
     function chaosImpulse() {
       const imp = currentMode.startImpulse;
       for (const m of marbles) {
-        if (spec.type === 'race') {
-          // 레이스 — X+ 방향 추진 + 약간의 좌우/상하 noise
-          m.rb.applyImpulse({
-            x: imp.x + Math.random() * imp.x * 0.4,
-            y: imp.y + Math.random() * imp.y,
-            z: (Math.random() - 0.5) * imp.z * 2,
-          }, true);
-        } else {
-          // 수직 — 좌우 분산
-          m.rb.applyImpulse({
-            x: (Math.random() - 0.5) * imp.x * 2,
-            y: imp.y + Math.random() * imp.y,
-            z: (Math.random() - 0.5) * imp.z * 2,
-          }, true);
-        }
+        m.rb.applyImpulse({
+          x: (Math.random() - 0.5) * imp.x * 2,
+          y: imp.y + Math.random() * imp.y,
+          z: (Math.random() - 0.5) * imp.z * 2,
+        }, true);
         m.rb.applyTorqueImpulse({
           x: (Math.random() - 0.5) * 0.4,
           y: (Math.random() - 0.5) * 0.4,
@@ -370,7 +349,7 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise 거부',
         const prev = lastSnapshot.get(m.id);
         if (prev === undefined) continue;
         // 진행 방향: vertical 은 y 감소(아래로), race 는 x 증가(우측으로)
-        const progress = spec.type === 'race' ? (x - prev[0]) : (prev[1] - y);
+        const progress = prev[1] - y;   // y 감소량 (떨어지는 양)
         if (progress < 0.3) {
           // stuck — streak 누적. 텔레포트 없음 (사용자 혼란 원인).
           // impulse 만, streak 따라 점진적으로 강해짐 (1배 → 최대 4배).
